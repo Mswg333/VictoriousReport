@@ -93,6 +93,9 @@ def _action(actions, *types):
     return 0.0
 
 
+PURCHASE_TYPES = ("omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase")
+
+
 def fetch_daily(token, account_id, start, end):
     """Brojke po kampanji i danu. Klikovi su klikovi na link (ne svi klikovi na objavu)."""
     rows = _paged(
@@ -102,7 +105,7 @@ def fetch_daily(token, account_id, start, end):
             "level": "campaign",
             "time_increment": 1,
             "time_range": json.dumps({"since": start.isoformat(), "until": end.isoformat()}),
-            "fields": "campaign_id,campaign_name,spend,impressions,inline_link_clicks,actions",
+            "fields": "campaign_id,campaign_name,spend,impressions,inline_link_clicks,actions,action_values",
             "limit": 500,
         },
     )
@@ -124,11 +127,38 @@ def fetch_daily(token, account_id, start, end):
                 # a izvestaj bira prema podesavanju klijenta.
                 {
                     "upit": _action(actions, "lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"),
-                    "kupovina": _action(actions, "omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase"),
+                    "kupovina": _action(actions, *PURCHASE_TYPES),
                 },
+                # Vrednost kupovina (Meta je prijavljuje samo za kupovine).
+                _action(row.get("action_values") or [], *PURCHASE_TYPES),
             ]
         )
     return {"start": start.isoformat(), "end": end.isoformat(), "rows": out}
+
+
+def fetch_reach(token, account_id, start, end):
+    """Doseg (broj razlicitih ljudi) i frekvencija za ceo period.
+
+    Doseg se ne sabira po danima ni po kampanjama (isti covek moze da vidi vise
+    kampanja), pa se za svaki period trazi posebno: za nalog i za kampanje.
+    """
+    url = f"{BASE}/act_{format_id(account_id)}/insights"
+    time_range = json.dumps({"since": start.isoformat(), "until": end.isoformat()})
+    account = _paged(url, token, {"level": "account", "time_range": time_range, "fields": "reach,frequency"})
+    campaigns = _paged(
+        url,
+        token,
+        {"level": "campaign", "time_range": time_range, "fields": "campaign_id,reach,frequency", "limit": 500},
+    )
+    total = account[0] if account else {}
+    return {
+        "reach": int(float(total.get("reach") or 0)),
+        "frequency": float(total.get("frequency") or 0),
+        "campaigns": {
+            str(c.get("campaign_id", "")): [int(float(c.get("reach") or 0)), float(c.get("frequency") or 0)]
+            for c in campaigns
+        },
+    }
 
 
 def connected():

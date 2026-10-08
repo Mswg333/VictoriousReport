@@ -27,9 +27,10 @@ izveštaju …“. Isto važi za zbirni izveštaj i za izveštaj o sajtu.
 
 - **Kanali oglašavanja i zbirni izveštaj:** potrošeno, prikazi, klikovi, CTR,
   cena po kliku, cena za 1.000 prikaza, konverzije, stopa konverzije i cena po
-  konverziji. Od delova izveštaja tu su grafikon po danima, tabela kampanja i,
-  samo za Google Ads, pojmovi pretrage. Grafikon može da prikazuje klikove,
-  prikaze, potrošnju ili konverzije.
+  konverziji, vrednost konverzija i ROAS. Kod Mete još i doseg i frekvencija.
+  Od delova izveštaja tu su grafikon po danima, tabela kampanja i, samo za
+  Google Ads, pojmovi pretrage. Grafikon može da prikazuje klikove, prikaze,
+  potrošnju, konverzije ili vrednost konverzija.
 - **Sajt (Analytics):** posete, posetioci, novi posetioci, prosečno trajanje
   posete, stopa angažovanja, pregledi strana i konverzije iz Analytics-a
   (ključni događaji). Od delova izveštaja tu su grafikon, izvori poseta i
@@ -184,6 +185,12 @@ Napomene:
   klijenta, broje leadovi (`lead`) ili kupovine (`purchase`).
 - **Klikovi** kod Meta Ads-a su klikovi na link, ne svi klikovi na objavu.
 - **Pojmovi pretrage** postoje samo za Google Ads.
+- **Vrednost konverzija** je onakva kakvu platforma prijavljuje: Google
+  `conversions_value`, Meta vrednost kupovina, Microsoft `Revenue`, a TikTok
+  ROAS kupovina pomnožen potrošnjom. **ROAS** = vrednost / potrošeno; u zbirnom
+  izveštaju se računa samo kad su svi kanali u istoj valuti.
+- **Doseg i frekvencija (Meta)** se ne mogu sabrati po danima, pa se za svaki
+  izabrani period čitaju posebno, i to samo kad su uključeni.
 - Klijent može da ima najviše jedan nalog po kanalu.
 
 ## Bezbednost: šta je urađeno

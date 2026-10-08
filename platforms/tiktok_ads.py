@@ -111,7 +111,9 @@ def fetch_daily(token, account_id, start, end):
                     "report_type": "BASIC",
                     "data_level": "AUCTION_CAMPAIGN",
                     "dimensions": json.dumps(["campaign_id", "stat_time_day"]),
-                    "metrics": json.dumps(["campaign_name", "spend", "impressions", "clicks", "conversion"]),
+                    "metrics": json.dumps(
+                        ["campaign_name", "spend", "impressions", "clicks", "conversion", "complete_payment_roas"]
+                    ),
                     "start_date": chunk_start.isoformat(),
                     "end_date": chunk_end.isoformat(),
                     "page": page,
@@ -132,6 +134,8 @@ def fetch_daily(token, account_id, start, end):
                         int(float(metrics.get("impressions") or 0)),
                         int(float(metrics.get("clicks") or 0)),
                         float(metrics.get("conversion") or 0),
+                        # TikTok daje ROAS kupovina, a vrednost je ROAS puta potrosnja.
+                        float(metrics.get("complete_payment_roas") or 0) * float(metrics.get("spend") or 0),
                     ]
                 )
             total_pages = int(data.get("page_info", {}).get("total_page") or 1)

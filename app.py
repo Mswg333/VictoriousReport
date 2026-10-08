@@ -566,9 +566,9 @@ def get_client_or_404(client_id):
     return client
 
 
-def layout_choices(client, key, has_terms=False):
+def layout_choices(client, key):
     """Sta tim moze da izabere za jedan izvestaj, sa trenutnim izborom."""
-    metrics, sections, charts = layout.options(key, has_terms)
+    metrics, sections, charts = layout.options(key)
     current = layout.get(client, key)
     return {
         "key": key,
@@ -662,7 +662,7 @@ def client_settings(client_id):
             "source": sources.get(mod.KEY),
             "accounts": None,
             "error": None,
-            "layout": layout_choices(client, mod.KEY, getattr(mod, "HAS_SEARCH_TERMS", False)),
+            "layout": layout_choices(client, mod.KEY),
         }
         if channel["connected"]:
             try:

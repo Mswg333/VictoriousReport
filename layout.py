@@ -19,6 +19,8 @@ SITE = "ga4"
 ADS_METRICS = [
     ("spend", "Potrošeno"),
     ("impressions", "Prikazi"),
+    ("reach", "Doseg (broj ljudi)"),
+    ("frequency", "Frekvencija"),
     ("clicks", "Klikovi"),
     ("ctr", "CTR (procenat klikova)"),
     ("cpc", "Cena po kliku"),
@@ -26,13 +28,24 @@ ADS_METRICS = [
     ("conversions", "Konverzije"),
     ("conv_rate", "Stopa konverzije"),
     ("cpa", "Cena po konverziji"),
+    ("value", "Vrednost konverzija"),
+    ("roas", "ROAS"),
 ]
+# Doseg i frekvencija postoje samo kod Mete, pojmovi pretrage samo kod Google-a.
+REACH_KEYS = {"meta"}
+TERMS_KEYS = {"google_ads"}
 ADS_SECTIONS = [
     ("chart", "Grafikon po danima"),
     ("campaigns", "Tabela kampanja"),
     ("terms", "Pojmovi pretrage"),
 ]
-ADS_CHART = [("clicks", "Klikovi"), ("impressions", "Prikazi"), ("spend", "Potrošnja"), ("conversions", "Konverzije")]
+ADS_CHART = [
+    ("clicks", "Klikovi"),
+    ("impressions", "Prikazi"),
+    ("spend", "Potrošnja"),
+    ("conversions", "Konverzije"),
+    ("value", "Vrednost konverzija"),
+]
 
 COMBINED_SECTIONS = [("chart", "Grafikon po danima"), ("campaigns", "Tabela po kanalima")]
 
@@ -53,14 +66,15 @@ SITE_SECTIONS = [
 SITE_CHART = [("sessions", "Posete"), ("users", "Posetioci"), ("key_events", "Konverzije")]
 
 
-def options(key, has_terms=False):
+def options(key):
     """(brojke, delovi, izbor grafikona) koji postoje za ovaj izvestaj."""
     if key == SITE:
         return SITE_METRICS, SITE_SECTIONS, SITE_CHART
+    metrics = ADS_METRICS if key in REACH_KEYS else [m for m in ADS_METRICS if m[0] not in ("reach", "frequency")]
     if key == COMBINED:
-        return ADS_METRICS, COMBINED_SECTIONS, ADS_CHART
-    sections = ADS_SECTIONS if has_terms else [s for s in ADS_SECTIONS if s[0] != "terms"]
-    return ADS_METRICS, sections, ADS_CHART
+        return metrics, COMBINED_SECTIONS, ADS_CHART
+    sections = ADS_SECTIONS if key in TERMS_KEYS else [s for s in ADS_SECTIONS if s[0] != "terms"]
+    return metrics, sections, ADS_CHART
 
 
 def _stored(client):
@@ -100,7 +114,7 @@ def default(client, key):
 def get(client, key):
     """Izbor za jedan izvestaj: {"m": set, "s": set, "chart": str}."""
     entry = _stored(client).get(key) or default(client, key)
-    metrics, sections, charts = options(key, has_terms=True)
+    metrics, sections, charts = options(key)
     allowed_charts = [c for c, _ in charts]
     chart = entry.get("chart") if entry.get("chart") in allowed_charts else allowed_charts[0]
     return {
@@ -116,7 +130,7 @@ def from_form(client, form, keys):
     for key in keys:
         if not form.get(f"lay_{key}"):
             continue  # izbor za ovaj kanal nije bio prikazan, pa ostaje kakav je bio
-        metrics, sections, charts = options(key, has_terms=True)
+        metrics, sections, charts = options(key)
         chart = form.get(f"chart_{key}", "")
         data[key] = {
             "m": [m for m, _ in metrics if m in form.getlist(f"m_{key}")],

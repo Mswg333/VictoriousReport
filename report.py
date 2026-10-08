@@ -106,12 +106,21 @@ def _range_text(start, end):
 
 # ---------------------------------------------------------------- brojke oglasa
 
-def _ads_values(kind, spend_by_currency, impressions, clicks, conversions):
+def _ads_values(kind, spend_by_currency, impressions, clicks, conversions, value_by_currency, reach=None):
     """Tekst za svaku brojku. None znaci da se brojka ne moze izracunati
-    (na primer cena po kliku kad su kanali u razlicitim valutama)."""
+    (na primer cena po kliku kad su kanali u razlicitim valutama).
+
+    reach: (doseg, frekvencija) ili None kad kanal nema doseg.
+    """
     currency = next(iter(spend_by_currency)) if len(spend_by_currency) == 1 else None
     spend = sum(spend_by_currency.values())
+    value = sum(value_by_currency.values())
     return {
+        "reach": fmt.num(reach[0]) if reach else None,
+        "frequency": fmt.num(reach[1], 2) if reach and reach[0] else None,
+        "value": fmt.money_sum(value_by_currency) if value_by_currency else None,
+        # Prihod po jednoj uloženoj jedinici valute; valute se ne mešaju.
+        "roas": f"{fmt.num(value / spend, 2)}x" if currency and spend else None,
         "spend": fmt.money_sum(spend_by_currency) if spend_by_currency else None,
         "impressions": fmt.num(impressions),
         "clicks": fmt.num(clicks),
@@ -136,21 +145,27 @@ def _ads_labels(kind):
         "conversions": (kind["column"], kind["column"]),
         "conv_rate": (kind["rate"], "Stopa konverzije"),
         "cpa": (kind["cost"], kind["cost"]),
+        "reach": ("Ljudi je videlo oglas (doseg)", "Doseg"),
+        "frequency": ("Puta je prosečna osoba videla oglas", "Frekvencija"),
+        "value": (kind["value"], "Vrednost"),
+        "roas": ("Prihod po 1 uloženom (ROAS)", "ROAS"),
     }
 
 
-def _ads_report(client, key, label, scope, totals, spend_by_currency, daily, start, end, table_title, first_column, rows):
+def _ads_report(client, key, label, scope, totals, spend_by_currency, value_by_currency, daily, start, end,
+                table_title, first_column, rows, reach=None):
     """Zajednicki oblik izvestaja za jedan kanal i za zbir svih kanala.
 
-    rows: [{"name", "spend", "currency", "impressions", "clicks", "conversions"}]
-    daily: [{"date", "spend", "impressions", "clicks", "conversions"}]
+    rows: [{"name", "spend", "currency", "impressions", "clicks", "conversions", "value", "reach"}]
+    daily: [{"date", "spend", "impressions", "clicks", "conversions", "value"}]
+    reach: (doseg, frekvencija) za ceo period, samo kod Mete.
     """
     lay = layout.get(client, key)
     shown = [m for m, _ in layout.ADS_METRICS if m in lay["m"]]
     kind = fmt.CONV_KINDS.get(client["conv_kind"], fmt.CONV_KINDS["upit"])
     labels = _ads_labels(kind)
     conversions, clicks, impressions = totals["conversions"], totals["clicks"], totals["impressions"]
-    values = _ads_values(kind, spend_by_currency, impressions, clicks, conversions)
+    values = _ads_values(kind, spend_by_currency, impressions, clicks, conversions, value_by_currency, reach)
     active = bool(impressions or clicks or sum(spend_by_currency.values()))
     when = _phrase(start, end)
     notes = []
@@ -161,6 +176,9 @@ def _ads_report(client, key, label, scope, totals, spend_by_currency, daily, sta
     elif "conversions" in shown:
         hero = f"{when} {scope} su vam doneli {fmt.conv(conversions)} {fmt.plural(conversions, kind['forms'])}"
         told.add("conversions")
+        if "value" in shown and totals.get("value"):
+            hero += f" u vrednosti od {values['value']}"
+            told.add("value")
         if "cpa" in shown and conversions and values["cpa"]:
             hero += f", po prosečnoj ceni od {values['cpa']} {kind['per']}"
             told.add("cpa")
@@ -186,14 +204,15 @@ def _ads_report(client, key, label, scope, totals, spend_by_currency, daily, sta
     chart = None
     if active and "chart" in lay["s"]:
         metric = lay["chart"]
-        if metric == "spend" and len(spend_by_currency) != 1:
-            notes.append("Grafikon potrošnje se ne prikazuje, jer su kanali u različitim valutama.")
+        if metric in ("spend", "value") and len(spend_by_currency) != 1:
+            notes.append("Grafikon novca se ne prikazuje, jer su kanali u različitim valutama.")
         else:
             currency = next(iter(spend_by_currency), "")
             text, title, none = {
                 "clicks": (lambda v: f"{fmt.num(v)} {fmt.plural(v, fmt.CLICK_FORMS)}", "Klikovi", "klikova"),
                 "impressions": (lambda v: f"{fmt.num(v)} {fmt.plural(v, fmt.IMPRESSION_FORMS)}", "Prikazi", "prikaza"),
                 "spend": (lambda v: fmt.money(v, currency), "Potrošnja", "potrošnje"),
+                "value": (lambda v: fmt.money(v, currency), kind["value"], "vrednosti konverzija"),
                 "conversions": (
                     lambda v: f"{fmt.conv(v)} {fmt.plural(v, kind['forms_nom'])}",
                     kind["column"],
@@ -213,7 +232,15 @@ def _ads_report(client, key, label, scope, totals, spend_by_currency, daily, sta
             "rows": [
                 cells(
                     r["name"],
-                    _ads_values(kind, {r["currency"]: r["spend"]}, r["impressions"], r["clicks"], r["conversions"]),
+                    _ads_values(
+                        kind,
+                        {r["currency"]: r["spend"]},
+                        r["impressions"],
+                        r["clicks"],
+                        r["conversions"],
+                        {r["currency"]: r["value"]},
+                        r.get("reach"),
+                    ),
                 )
                 for r in rows
             ],
@@ -243,6 +270,18 @@ def _single(client, mod, source, start, end, data_range):
 
     summary = platforms.summarize(payload, start, end, client["conv_kind"])
     currency = source["currency"] or "EUR"
+    lay = layout.get(client, mod.KEY)
+
+    # Doseg se ne moze sabrati iz dnevnih brojki, pa se cita posebno, i to samo
+    # kad ga je tim ukljucio.
+    reach, campaign_reach = None, {}
+    if mod.KEY in layout.REACH_KEYS and lay["m"] & {"reach", "frequency"}:
+        try:
+            data = platforms.reach(source["account_id"], summary["start"], summary["end"])
+            reach, campaign_reach = (data["reach"], data["frequency"]), data["campaigns"]
+        except SourceError as exc:
+            notes.append(f"Doseg nije učitan: {exc}")
+
     report, more = _ads_report(
         client,
         mod.KEY,
@@ -250,16 +289,21 @@ def _single(client, mod, source, start, end, data_range):
         f"{mod.NAME} oglasi",
         summary["totals"],
         {currency: summary["totals"]["spend"]},
+        {currency: summary["totals"]["value"]},
         summary["daily"],
         summary["start"],
         summary["end"],
         "Rezultati po kampanjama",
         "Kampanja",
-        [{**c, "currency": currency} for c in summary["campaigns"]],
+        [
+            {**c, "currency": currency, "reach": campaign_reach.get(c["id"], (0, 0)) if reach else None}
+            for c in summary["campaigns"]
+        ],
+        reach,
     )
     notes += more
 
-    if getattr(mod, "HAS_SEARCH_TERMS", False) and "terms" in layout.get(client, mod.KEY)["s"]:
+    if getattr(mod, "HAS_SEARCH_TERMS", False) and "terms" in lay["s"]:
         try:
             terms = platforms.search_terms(source["account_id"], summary["start"], summary["end"])
             report["terms"] = [
@@ -289,19 +333,21 @@ def _combined(client, sources, start, end, data_range):
     if not loaded:
         return None, notes
 
-    totals = {"impressions": 0, "clicks": 0, "conversions": 0.0}
-    spend_by_currency, per_day, rows = {}, {}, []
+    totals = {"impressions": 0, "clicks": 0, "conversions": 0.0, "value": 0.0}
+    spend_by_currency, value_by_currency, per_day, rows = {}, {}, {}, []
     for mod, src, payload in loaded:
         summary = platforms.summarize(payload, start, end, client["conv_kind"])
         currency = src["currency"] or "EUR"
         for key in totals:
             totals[key] += summary["totals"][key]
         spend_by_currency[currency] = spend_by_currency.get(currency, 0) + summary["totals"]["spend"]
+        value_by_currency[currency] = value_by_currency.get(currency, 0) + summary["totals"]["value"]
         for point in summary["daily"]:
             day = per_day.setdefault(
-                point["date"], {"date": point["date"], "spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0}
+                point["date"],
+                {"date": point["date"], "spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0, "value": 0.0},
             )
-            for metric in ("spend", "impressions", "clicks", "conversions"):
+            for metric in ("spend", "impressions", "clicks", "conversions", "value"):
                 day[metric] += point[metric]
         rows.append(
             {
@@ -311,9 +357,11 @@ def _combined(client, sources, start, end, data_range):
                 "impressions": summary["totals"]["impressions"],
                 "clicks": summary["totals"]["clicks"],
                 "conversions": summary["totals"]["conversions"],
+                "value": summary["totals"]["value"],
             }
         )
     totals["conversions"] = round(totals["conversions"], 2)
+    totals["value"] = round(totals["value"], 2)
     if len(spend_by_currency) > 1:
         notes.append("Kanali su u različitim valutama, pa se potrošnja prikazuje odvojeno i bez zbirne cene.")
 
@@ -324,6 +372,7 @@ def _combined(client, sources, start, end, data_range):
         "oglasi na svim kanalima",
         totals,
         spend_by_currency,
+        value_by_currency,
         [per_day[day] for day in sorted(per_day)],
         start,
         end,

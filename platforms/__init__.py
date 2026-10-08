@@ -10,7 +10,8 @@ Svaki kanal je jedan modul sa istim skupom funkcija:
     fetch_daily(token, account_id, start, end)
                          brojke po kampanji i danu, u obliku
                          {"start": ..., "end": ..., "rows": [[dan, id, ime,
-                           potroseno, prikazi, klikovi, konverzije], ...]}
+                           potroseno, prikazi, klikovi, konverzije,
+                           vrednost konverzija], ...]}
 
 Ovde su radnje koje su iste za sve kanale: kes, osvezavanje vise naloga
 odjednom i sabiranje brojki za izabrani period.
@@ -48,7 +49,8 @@ def default_range():
 
 
 def _keys(platform, account_id, start, end):
-    suffix = f"{platform}:{account_id}:{start.isoformat()}:{end.isoformat()}"
+    # "v2": od kad redovi imaju i vrednost konverzija; stariji zapamceni odgovori se ne koriste.
+    suffix = f"{platform}:{account_id}:v2:{start.isoformat()}:{end.isoformat()}"
     return f"daily:{suffix}", f"daily_error:{suffix}"
 
 
@@ -146,13 +148,15 @@ def warm(items):
 def summarize(payload, start, end, conv_kind):
     """Iz dnevnih redova racuna zbir, kampanje i niz po danima za period od start do end."""
     days = (end - start).days + 1
-    totals = {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0}
+    totals = {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0, "value": 0.0}
     per_day = {
-        start + timedelta(days=i): {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0}
+        start + timedelta(days=i): {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0, "value": 0.0}
         for i in range(days)
     }
     campaigns = {}
-    for day_text, campaign_id, name, spend, impressions, clicks, conversions in payload["rows"]:
+    for row in payload["rows"]:
+        day_text, campaign_id, name, spend, impressions, clicks, conversions = row[:7]
+        value = row[7] if len(row) > 7 else 0.0
         day = date.fromisoformat(day_text)
         if day < start or day > end:
             continue
@@ -160,16 +164,18 @@ def summarize(payload, start, end, conv_kind):
             conversions = conversions.get(conv_kind, 0)
         c = campaigns.setdefault(
             campaign_id,
-            {"name": name, "spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0},
+            {"id": campaign_id, "name": name, "spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0, "value": 0.0},
         )
         for target in (c, totals, per_day[day]):
             target["spend"] += spend
             target["impressions"] += impressions
             target["clicks"] += clicks
             target["conversions"] += conversions
+            target["value"] += value
     for target in [totals, *campaigns.values()]:
         target["spend"] = round(target["spend"], 2)
         target["conversions"] = round(target["conversions"], 2)
+        target["value"] = round(target["value"], 2)
     return {
         "start": start,
         "end": end,
@@ -189,9 +195,18 @@ def search_terms(account_id, start, end):
     )
 
 
+def reach(account_id, start, end):
+    """Doseg i frekvencija (samo Meta Ads), zapamceni kao i ostale brojke."""
+    return base.cached(
+        f"reach:{meta_ads.KEY}:{account_id}:{start.isoformat()}:{end.isoformat()}",
+        base.data_ttl(end),
+        lambda: meta_ads.fetch_reach(meta_ads.prepare(), account_id, start, end),
+    )
+
+
 def clear(platform, account_id):
     """Brise zapamcene brojke za jedan nalog, za sve periode."""
-    for prefix in ("daily", "daily_error", "terms"):
+    for prefix in ("daily", "daily_error", "terms", "reach"):
         base.cache_delete_prefix(f"{prefix}:{platform}:{account_id}:")
     if platform == ga4.KEY:
         base.cache_delete_prefix(f"ga4:{account_id}:")

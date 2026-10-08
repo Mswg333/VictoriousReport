@@ -147,7 +147,7 @@ def fetch_daily(token, account_id, start, end):
         token,
         account_id,
         "SELECT campaign.id, campaign.name, segments.date, metrics.cost_micros, "
-        "metrics.impressions, metrics.clicks, metrics.conversions "
+        "metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value "
         "FROM campaign "
         f"WHERE segments.date BETWEEN '{start.isoformat()}' AND '{end.isoformat()}'",
     )
@@ -166,6 +166,7 @@ def fetch_daily(token, account_id, start, end):
                 int(metrics.get("impressions", 0)),
                 int(metrics.get("clicks", 0)),
                 float(metrics.get("conversions", 0)),
+                float(metrics.get("conversionsValue", 0)),
             ]
         )
     return {"start": start.isoformat(), "end": end.isoformat(), "rows": out}

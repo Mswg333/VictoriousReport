@@ -270,7 +270,7 @@ team.post("/tim/klijent/1", data={
     "lay_ukupno": "1", "m_ukupno": ["impressions"], "s_ukupno": ["chart"], "chart_ukupno": "spend",
 })
 settings_page = team.get("/tim/klijent/1").text
-assert "Šta klijent vidi u izveštaju Meta Ads" in settings_page and "4 od 11 uključeno" in text(settings_page)
+assert "Šta klijent vidi u izveštaju Meta Ads" in settings_page and "4 od 15 uključeno" in text(settings_page)
 meta = visitor.get(f"{path}?kanal=meta").text
 plain = text(meta)
 assert hero(meta) == "U poslednjih 30 dana Meta Ads oglasi su bili aktivni.", hero(meta)
@@ -293,6 +293,33 @@ assert "različitim valutama" in text(team.get("/tim/klijent/1/pregled").text)
 # Kanal cija polja nisu poslata zadrzava svoj izbor.
 team.post("/tim/klijent/1", data=SETTINGS)
 assert "Konverzije po danima" in text(visitor.get(f"{path}?kanal=ga4").text)
+# 12d. Vrednost konverzija, ROAS i (samo Meta) doseg i frekvencija.
+fake.reach_calls.clear()
+team.post("/tim/klijent/1", data={
+    **SETTINGS, "conv_kind": "kupovina",
+    "lay_meta": "1", "m_meta": ["spend", "reach", "frequency", "conversions", "value", "roas"], "s_meta": ["campaigns"],
+    "m_google_ads": ["value", "roas"], "s_google_ads": ["chart"], "chart_google_ads": "value",
+    "lay_ukupno": "1", "m_ukupno": ["value", "roas"], "s_ukupno": ["campaigns"],
+})
+meta = visitor.get(f"{path}?kanal=meta").text
+plain = text(meta)
+assert hero(meta) == "U poslednjih 30 dana Meta Ads oglasi su vam doneli 30 kupovina u vrednosti od 1.200 €.", hero(meta)
+for expected in ("150 €", "18.000", "Ljudi je videlo oglas (doseg)", "3,33", "8,00x", "Doseg", "Frekvencija", "ROAS"):
+    assert expected in plain, expected
+assert sorted(fake.reach_calls) == [("account", str(YESTERDAY - timedelta(days=29))), ("campaign", str(YESTERDAY - timedelta(days=29)))]
+visitor.get(f"{path}?kanal=meta")
+assert len(fake.reach_calls) == 2, "doseg se pamti"
+google_page = visitor.get(f"{path}?kanal=google_ads").text
+plain = text(google_page)
+assert "3.600 €" in plain and "4,00x" in plain and "Vrednost kupovina po danima" in plain, plain[:600]
+assert "Doseg" not in plain and "Doseg" not in text(team.get("/tim/klijent/1").text).split("Šta klijent vidi u izveštaju Google Ads")[1].split("Meta Ads")[0]
+plain = text(visitor.get(path).text)
+assert "4.950 € i 180 $" in plain and "ROAS" in plain  # u tabeli po kanalima, ali bez zbirnog ROAS-a
+assert "Prihod po 1 uloženom" not in plain, "zbirni ROAS se ne racuna preko razlicitih valuta"
+assert "4,00x" in plain and "2,00x" in plain  # ROAS po kanalu u tabeli: Google i TikTok
+visitor.get(f"{path}?kanal=google_ads")
+assert len(fake.reach_calls) == 2, "doseg se ne cita kad nije ukljucen"
+
 # Povratak na podrazumevano za dalje provere.
 DEFAULT_ADS = {"m": ["spend", "impressions", "clicks", "cpc", "conversions", "cpa"], "s": ["chart", "campaigns"]}
 team.post("/tim/klijent/1", data={

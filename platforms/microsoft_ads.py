@@ -225,7 +225,9 @@ def fetch_daily(token, account_id, start, end):
                 "ExcludeReportFooter": True,
                 "ReturnOnlyCompleteData": False,
                 "Aggregation": "Daily",
-                "Columns": ["TimePeriod", "CampaignId", "CampaignName", "Spend", "Impressions", "Clicks", "Conversions"],
+                "Columns": [
+                    "TimePeriod", "CampaignId", "CampaignName", "Spend", "Impressions", "Clicks", "Conversions", "Revenue",
+                ],
                 "Scope": {"AccountIds": [account]},
                 "Time": {
                     "CustomDateRangeStart": day(start),
@@ -270,6 +272,7 @@ def fetch_daily(token, account_id, start, end):
                     int(_number(row.get("Impressions"))),
                     int(_number(row.get("Clicks"))),
                     _number(row.get("Conversions")),
+                    _number(row.get("Revenue")),
                 ]
             )
     return {"start": start.isoformat(), "end": end.isoformat(), "rows": out}

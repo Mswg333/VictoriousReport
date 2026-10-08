@@ -56,6 +56,7 @@ class FakeNet:
         self.ms_refresh_tokens = ["ms-rt-1"]
         self.tiktok_ranges = []
         self.ranges = []           # (kanal, od, do) za svaki zahtev za dnevne brojke
+        self.reach_calls = []      # (nivo, od) za svaki zahtev za doseg (Meta)
         self.ms_range = None
 
     def count(self, part):
@@ -159,7 +160,10 @@ class FakeNet:
                     {
                         "campaign": {"id": "1", "name": "Pretraga: kuhinje"},
                         "segments": {"date": day},
-                        "metrics": {"costMicros": "20000000", "impressions": "1000", "clicks": "40", "conversions": 1.5},
+                        "metrics": {
+                            "costMicros": "20000000", "impressions": "1000", "clicks": "40",
+                            "conversions": 1.5, "conversionsValue": 120.0,
+                        },
                     }
                 )
                 rows.append(
@@ -242,6 +246,11 @@ class FakeNet:
             all_days = days_between(since, until)
             days = all_days[len(all_days) // 2:]
             paging = {"cursors": {"after": "x"}}
+        elif "time_increment" not in params:  # doseg za ceo period
+            self.reach_calls.append((params["level"], json.loads(params["time_range"])["since"]))
+            if params["level"] == "account":
+                return FakeResponse(200, {"data": [{"reach": "18000", "frequency": "3.3333"}]})
+            return FakeResponse(200, {"data": [{"campaign_id": "51", "reach": "18000", "frequency": "3.3333"}]})
         else:
             assert params["level"] == "campaign" and params["time_increment"] == 1
             time_range = json.loads(params["time_range"])
@@ -268,6 +277,7 @@ class FakeNet:
                     {"action_type": "lead", "value": "2"},
                     {"action_type": "omni_purchase", "value": "1"},
                 ],
+                "action_values": [{"action_type": "omni_purchase", "value": "40.00"}],
             }
             for day in days
         ]
@@ -328,8 +338,8 @@ class FakeNet:
         )
 
     def _microsoft_download(self):
-        lines = ['"TimePeriod","CampaignId","CampaignName","Spend","Impressions","Clicks","Conversions"']
-        lines += [f'"{day}","61","Bing: kuhinje","2.00","500","10","1.00"' for day in days_between(*self.ms_range)]
+        lines = ['"TimePeriod","CampaignId","CampaignName","Spend","Impressions","Clicks","Conversions","Revenue"']
+        lines += [f'"{day}","61","Bing: kuhinje","2.00","500","10","1.00","5.00"' for day in days_between(*self.ms_range)]
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("report.csv", "﻿" + "\r\n".join(lines) + "\r\n")
@@ -366,7 +376,8 @@ class FakeNet:
         rows = [
             {
                 "dimensions": {"campaign_id": "71", "stat_time_day": f"{day} 00:00:00"},
-                "metrics": {"campaign_name": "TikTok: video", "spend": "3.00", "impressions": "4000", "clicks": "30", "conversion": "0"},
+                "metrics": {"campaign_name": "TikTok: video", "spend": "3.00", "impressions": "4000", "clicks": "30", "conversion": "0",
+                            "complete_payment_roas": "2"},
             }
             for day in days_back((end - start).days + 1, end)
         ]
