@@ -1,0 +1,377 @@
+"""Provera celog toka bez pravih platformi.
+
+Odgovori Google-a, Mete, Microsoft-a i TikTok-a su lazni (tests/fakes.py),
+pa test ne izlazi na mrezu i ne trazi nikakve kljuceve. Pokretanje iz
+korena projekta:
+
+    python tests/test_flow.py
+"""
+import json
+import os
+import re
+import sys
+import tempfile
+import time
+from datetime import timedelta
+from urllib.parse import parse_qs, urlparse
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+os.environ.update(
+    SQLITE_PATH=os.path.join(tempfile.mkdtemp(), "test.db"),
+    SECRET_KEY="test-secret",
+    DATABASE_URL="",  # prazno namerno: test nikad ne sme da dira pravu bazu iz .env fajla
+    GOOGLE_CLIENT_ID="test-client-id",
+    GOOGLE_CLIENT_SECRET="test-client-secret",
+    GOOGLE_ADS_MCC_ID="123-456-7890",
+    GOOGLE_ADS_ACCOUNT_IDS="",
+    ALLOWED_DOMAIN="victorious.rs",
+    ALLOWED_EMAILS="",
+    MICROSOFT_ADS_CLIENT_ID="ms-client",
+    MICROSOFT_ADS_CLIENT_SECRET="ms-secret",
+    MICROSOFT_ADS_DEVELOPER_TOKEN="ms-dev-token",
+    TIKTOK_APP_ID="tt-app",
+    TIKTOK_APP_SECRET="tt-secret",
+)
+
+import app as portal  # noqa: E402
+import connections  # noqa: E402
+import db  # noqa: E402
+import fmt  # noqa: E402
+import google_auth  # noqa: E402
+import platforms  # noqa: E402
+from platforms import google_ads  # noqa: E402
+from tests.fakes import YESTERDAY, install  # noqa: E402
+
+assert not db.IS_PG, "test radi samo nad privremenom SQLite bazom"
+fake = install()
+flask_app = portal.app
+
+
+def csrf(html):
+    return re.search(r'name="_csrf" value="([^"]+)"', html).group(1)
+
+
+def text(html):
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+
+
+def hero(html):
+    return text(re.search(r'<h1 class="hero">(.*?)</h1>', html, re.S).group(1)).strip()
+
+
+def google(client, token, purpose, code):
+    resp = client.post("/auth/google/start", data={"_csrf": token, "svrha": purpose})
+    assert resp.status_code == 302 and resp.location.startswith(google_auth.AUTH_URL), resp.location
+    params = parse_qs(urlparse(resp.location).query)
+    back = client.get(f"/auth/google/callback?state={params['state'][0]}&code={code}", follow_redirects=True)
+    return params, back
+
+
+team = flask_app.test_client()
+
+# 1. Bez prijave nema pristupa.
+for path in ("/tim", "/tim/izvor", "/tim/klijent/1", "/auth/microsoft/callback", "/auth/tiktok/callback"):
+    resp = team.get(path)
+    assert resp.status_code == 302 and "/tim/prijava" in resp.location, path
+login_page = team.get("/tim/prijava")
+assert "Prijavi se preko Google-a" in login_page.text
+token = csrf(login_page.text)
+
+# 2. Prijava: samo osnovni podaci, samo domen agencije, state vazi jednom.
+resp = team.get("/auth/google/callback?state=pogresan&code=code-login", follow_redirects=True)
+assert "Prijava je istekla" in resp.text
+params, resp = google(team, token, "login", "code-outsider")
+assert params["scope"] == ["openid email profile"] and params["hd"] == ["victorious.rs"] and "access_type" not in params
+assert "samo nalozima sa domena victorious.rs" in resp.text and team.get("/tim").status_code == 302
+params, resp = google(team, csrf(resp.text), "login", "code-login")
+assert "Još nema klijenata na portalu" in resp.text and "Nenad Test" in resp.text
+resp = team.get(f"/auth/google/callback?state={params['state'][0]}&code=code-login", follow_redirects=True)
+assert "Prijava je istekla" in resp.text
+token = csrf(team.get("/tim/izvor").text)
+
+# 3. Google: bez dozvola se odbija; sa dozvolama se token cuva sifrovan.
+assert text(team.get("/tim/izvor").text).count("Nije povezano") == 4
+_, resp = google(team, token, "connect", "code-connect-nothing")
+assert "Niste dozvolili pristup ni Google Ads-u ni Analytics-u" in resp.text
+params, resp = google(team, token, "connect", "code-connect")
+assert params["access_type"] == ["offline"] and google_auth.SCOPE_ADS in params["scope"][0]
+assert "Google nalog je povezan" in resp.text
+assert "Aktivnih naloga ispod MCC-a 123-456-7890: 3." in text(resp.text), text(resp.text)
+with flask_app.app_context():
+    stored = db.query("SELECT * FROM portal_connections WHERE platform = 'google'", one=True)
+    assert "rt-secret" not in json.dumps(stored) and stored["label"] == "nenad@victorious.rs"
+
+# 4. Meta: neispravan token se odbija, ispravan se cuva sifrovan i vise se ne prikazuje.
+resp = team.post("/tim/izvor/meta/token", data={"_csrf": token, "token": "los-token"}, follow_redirects=True)
+assert "Meta nije prihvatila token: Invalid OAuth access token." in resp.text
+resp = team.post("/tim/izvor/meta/token", data={"_csrf": token, "token": " meta-token "}, follow_redirects=True)
+plain = text(resp.text)
+assert "Meta Ads je povezan." in plain and "Portal sistemski korisnik" in plain
+assert "Oglasnih naloga koje portal vidi: 1." in plain and "meta-token" not in resp.text
+with flask_app.app_context():
+    assert "meta-token" not in json.dumps(db.query("SELECT * FROM portal_connections"))
+
+# 5. Microsoft: OAuth, lista aktivnih naloga, cuvanje novog refresh tokena.
+resp = team.post("/auth/microsoft/start", data={"_csrf": token})
+ms = parse_qs(urlparse(resp.location).query)
+assert resp.location.startswith("https://login.microsoftonline.com/common/oauth2/v2.0/authorize")
+assert ms["scope"] == ["https://ads.microsoft.com/msads.manage offline_access"]
+assert ms["redirect_uri"] == ["http://localhost/auth/microsoft/callback"]
+resp = team.get("/auth/microsoft/callback?state=pogresan&code=ms-code", follow_redirects=True)
+assert "Povezivanje je isteklo" in resp.text
+resp = team.post("/auth/microsoft/start", data={"_csrf": token})
+state = parse_qs(urlparse(resp.location).query)["state"][0]
+resp = team.get(f"/auth/microsoft/callback?state={state}&code=ms-code", follow_redirects=True)
+plain = text(resp.text)
+assert "Microsoft Ads je povezan." in plain and "Naloga koje portal vidi: 1." in plain, plain
+with flask_app.app_context():
+    assert connections.secret("microsoft")["refresh_token"] == fake.ms_refresh_tokens[-1] != "ms-rt-1"
+
+# 6. TikTok: OAuth povratak, pa rucni unos koda.
+resp = team.post("/auth/tiktok/start", data={"_csrf": token})
+tt = parse_qs(urlparse(resp.location).query)
+assert resp.location.startswith("https://business-api.tiktok.com/portal/auth?") and tt["app_id"] == ["tt-app"]
+assert tt["redirect_uri"] == ["http://localhost/auth/tiktok/callback"]
+resp = team.get(f"/auth/tiktok/callback?state={tt['state'][0]}&auth_code=tt-code", follow_redirects=True)
+plain = text(resp.text)
+assert "TikTok Ads je povezan." in plain and "Oglašivača koje portal vidi: 1." in plain, plain
+team.post("/tim/izvor/tiktok/prekini", data={"_csrf": token})
+resp = team.post("/tim/izvor/tiktok/kod", data={"_csrf": token, "auth_code": "los"}, follow_redirects=True)
+assert "TikTok Ads nije povezan: Auth code is invalid or expired." in resp.text
+resp = team.post("/tim/izvor/tiktok/kod", data={"_csrf": token, "auth_code": "tt-code-rucno"}, follow_redirects=True)
+assert "TikTok Ads je povezan." in resp.text
+assert team.post("/tim/izvor/nepoznato/prekini", data={"_csrf": token}).status_code == 404
+assert "Nije povezano" not in text(team.get("/tim/izvor").text)
+
+# 7. Novi klijent i izbor naloga po kanalu.
+assert "Upišite ime klijenta" in team.post("/tim/dodaj", data={"_csrf": token, "name": " "}, follow_redirects=True).text
+resp = team.post("/tim/dodaj", data={"_csrf": token, "name": "Nameštaj Hrast"}, follow_redirects=True)
+for expected in ("Nameštaj Hrast (111-204-5501, EUR)", "Klinika Vita (222-318-7742, RSD)", "Hrast Meta (9001, EUR)",
+                 "Hrast Bing (8001, EUR)", "Hrast TikTok (7001, USD)", "Hrast / hrast.rs (555000111)"):
+    assert expected in resp.text, expected
+assert "Stari nalog" not in resp.text  # neaktivan Microsoft nalog se ne nudi
+SETTINGS = {
+    "_csrf": token, "name": "Nameštaj Hrast d.o.o.", "conv_kind": "upit",
+    "show_spend": "1", "show_clicks": "1", "show_conv": "1", "show_campaigns": "1", "show_terms": "1", "show_combined": "1",
+    "src_google_ads": "1112045501", "vis_google_ads": "1", "src_meta": "9001", "vis_meta": "1",
+    "src_microsoft": "777:8001", "vis_microsoft": "1", "src_tiktok": "7001", "vis_tiktok": "1",
+    "src_ga4": "555000111", "vis_ga4": "1",
+}
+resp = team.post("/tim/klijent/1", data={**SETTINGS, "src_meta": "666"}, follow_redirects=True)
+assert "Meta Ads: izabrani nalog nije među nalozima koje portal vidi" in resp.text
+assert "Ostale izmene su sačuvane" in resp.text
+resp = team.post("/tim/klijent/1", data=SETTINGS, follow_redirects=True)
+assert "Izmene su sačuvane." in resp.text and resp.text.count("Izabrano") == 5
+with flask_app.app_context():
+    saved = {s["platform"]: (s["account_id"], s["currency"]) for s in db.query("SELECT * FROM portal_sources")}
+assert saved == {"google_ads": ("1112045501", "EUR"), "meta": ("9001", "EUR"), "microsoft": ("777:8001", "EUR"),
+                 "tiktok": ("7001", "USD"), "ga4": ("555000111", "")}, saved
+
+# 7b. Ogranicenje Google Ads-a na navedene naloge: MCC se ne pretrazuje, drugi nalozi se ne citaju.
+google_ads.ONLY_IDS = ["1112045501"]
+fake.gaql.clear()
+page = team.get("/tim/klijent/1").text
+assert "Nameštaj Hrast (111-204-5501, EUR)" in page and "Klinika Vita" not in page
+with flask_app.app_context():
+    payload, error = platforms.daily("google_ads", "2223187742", *platforms.default_range())
+    assert payload is None and "nije među nalozima koje portal sme da čita" in error
+    platforms.clear("google_ads", "2223187742")
+assert fake.gaql and all("FROM customer LIMIT 1" in q for q in fake.gaql), fake.gaql
+assert "Čita samo naloge koje ste naveli: 111-204-5501." in text(team.get("/tim/izvor").text)
+google_ads.ONLY_IDS = []
+
+# 8. Lista klijenata: zbir preko kanala, valute se ne sabiraju.
+before = len(fake.calls)
+plain = text(team.get("/tim?dana=30").text)
+assert "Na portalu: 1 klijent. Ukupno potrošeno 1.110 € i 90 $ u poslednjih 30 dana" in plain, plain
+assert "Google Ads, Meta Ads, Microsoft Ads (Bing), TikTok Ads, Analytics" in plain
+assert "3.300" in plain and "135" in plain
+assert len(fake.tiktok_ranges) == 3 and (fake.tiktok_ranges[0][1], fake.tiktok_ranges[-1][0]) == (YESTERDAY, YESTERDAY - timedelta(days=89))
+loaded = len(fake.calls)
+assert loaded > before
+assert "1.110 €" not in text(team.get("/tim?dana=7").text) and len(fake.calls) == loaded, "drugi period ne zove platforme"
+
+# 9. Lozinka i ulaz klijenta.
+team.post("/tim/klijent/1/lozinka", data={"_csrf": token})
+settings = team.get("/tim/klijent/1").text
+password = re.search(r'class="secret big">([^<]+)<', settings).group(1)
+path = urlparse(re.search(r'id="link">([^<]+)<', settings).group(1)).path
+visitor = flask_app.test_client()
+gate = visitor.get(path)
+assert "Izveštaj za Nameštaj Hrast d.o.o." in gate.text
+assert "Lozinka nije tačna" in visitor.post(path, data={"_csrf": csrf(gate.text), "lozinka": "pogresna"}).text
+assert visitor.post(path, data={"_csrf": csrf(gate.text), "lozinka": password}).status_code == 302
+
+# 10. Zbirni izvestaj je prvi; kanali u razlicitim valutama nemaju zbirnu cenu.
+page = visitor.get(path).text
+tabs = re.findall(r'<a href="[^"]*kanal=([a-z0-9_]+)[^"]*"[^>]*>([^<]+)</a>', page.split('class="tabs"')[1].split("</nav>")[0])
+assert [name for _, name in tabs] == ["Ukupno", "Google Ads", "Meta Ads", "Microsoft Ads (Bing)", "TikTok Ads", "Sajt (Analytics)"], tabs
+assert hero(page) == "U poslednjih 30 dana oglasi na svim kanalima su vam doneli 135 upita.", hero(page)
+plain = text(page)
+for expected in ("1.110 € i 90 $", "3.300", "Rezultati po kanalima", "Microsoft Ads (Bing)", "Klikovi po danima"):
+    assert expected in plain, expected
+assert "Napomene za tim" not in plain and "Šta su ljudi tražili" not in plain
+
+# 11. Poseban izvestaj za svaki kanal.
+EXPECTED = {
+    "google_ads": "U poslednjih 30 dana Google Ads oglasi su vam doneli 45 upita, po prosečnoj ceni od 20,00 € po upitu.",
+    "meta": "U poslednjih 30 dana Meta Ads oglasi su vam doneli 60 upita, po prosečnoj ceni od 2,50 € po upitu.",
+    "microsoft": "U poslednjih 30 dana Microsoft Ads (Bing) oglasi su vam doneli 30 upita, po prosečnoj ceni od 2,00 € po upitu.",
+    "tiktok": "U poslednjih 30 dana TikTok Ads oglasi su vam doneli 0 upita.",
+    "ga4": "U poslednjih 30 dana vaš sajt je imao 1.230 poseta.",
+}
+for key, sentence in EXPECTED.items():
+    page = visitor.get(f"{path}?kanal={key}").text
+    assert hero(page) == sentence, (key, hero(page))
+    assert len(re.findall(r'class="bar( peak)?"', page)) == 30, key
+plain = text(visitor.get(f"{path}?kanal=google_ads").text)
+for expected in ("900 €", "120.000", "1.500", "0,60 €", "Pretraga: kuhinje", "Performance Max", "nema upita",
+                 "kuhinje po meri", "42 klika", "Šta su ljudi tražili"):
+    assert expected in plain, expected
+assert "Bing: kuhinje" in text(visitor.get(f"{path}?kanal=microsoft").text)
+plain = text(visitor.get(f"{path}?kanal=tiktok").text)
+assert "90 $" in plain and "TikTok: video" in plain and "Šta su ljudi tražili" not in plain
+plain = text(visitor.get(f"{path}?kanal=ga4").text)
+for expected in ("900", "2 min 15 s", "Plaćena pretraga", "500 poseta", "Nepoznat kanal", "1 poseta", "/kontakt", "45 pregleda", "Posete po danima"):
+    assert expected in plain, expected
+week = visitor.get(f"{path}?kanal=google_ads&od={YESTERDAY - timedelta(days=6)}&do={YESTERDAY}").text
+assert "doneli 10,5 upita, po prosečnoj ceni od 20,00 € po upitu" in hero(week)
+quarter = visitor.get(f"{path}?kanal=meta&od={YESTERDAY - timedelta(days=89)}&do={YESTERDAY}").text
+assert "doneli 180 upita" in hero(quarter) and len(re.findall(r'class="bar( peak)?"', quarter)) == 13
+
+# 12. Podesavanja menjaju izvestaj: kupovine umesto upita, sakriven kanal, bez zbirnog.
+team.post("/tim/klijent/1", data={**SETTINGS, "conv_kind": "kupovina"})
+assert hero(visitor.get(f"{path}?kanal=meta").text) == (
+    "U poslednjih 30 dana Meta Ads oglasi su vam doneli 30 kupovina, po prosečnoj ceni od 5,00 € po kupovini."
+)
+hidden = {k: v for k, v in SETTINGS.items() if k != "vis_tiktok"}
+team.post("/tim/klijent/1", data=hidden)
+page = visitor.get(path + "?kanal=tiktok").text  # sakriven kanal se ne moze otvoriti ni direktno
+assert "TikTok" not in page
+assert hero(page) == "U poslednjih 30 dana oglasi na svim kanalima su vam doneli 135 upita, po prosečnoj ceni od 8,22 € po upitu."
+assert "TikTok Ads" in text(team.get("/tim").text), "tim i dalje vidi sakriven kanal"
+team.post("/tim/klijent/1", data={k: v for k, v in hidden.items() if k != "show_combined"})
+assert hero(visitor.get(path).text).startswith("U poslednjih 30 dana Google Ads oglasi")
+team.post("/tim/klijent/1", data={k: v for k, v in SETTINGS.items() if k not in ("show_spend", "show_conv")})
+plain = text(visitor.get(f"{path}?kanal=meta").text)
+assert "doneli 600 klikova ka sajtu" in plain and "€" not in plain and "Upiti" not in plain
+team.post("/tim/klijent/1", data=SETTINGS)
+
+# 12b. Period koji odredjuje tim; klijent bira bilo koji raspon unutar njega.
+month_end = YESTERDAY.replace(day=1) - timedelta(days=1)
+month_end = (month_end.replace(day=1) - timedelta(days=1)).replace(day=1) - timedelta(days=1)  # pre tri meseca
+month_start = month_end.replace(day=1)
+month_days = month_end.day
+month_name = fmt.MONTHS_GENITIVE[month_end.month - 1]
+with_year = f" {month_end.year}." if month_end.year != YESTERDAY.year else ""
+for bad, message in [
+    ({"range_start": "", "range_end": str(month_end)}, "upišite i datum od kog"),
+    ({"range_start": str(month_end), "range_end": str(month_start)}, "je pre datuma"),
+    ({"range_start": str(YESTERDAY - timedelta(days=400)), "range_end": ""}, "najviše 366 dana"),
+    ({"range_start": "31.01.2026", "range_end": ""}, "datum nije ispravan"),
+]:
+    resp = team.post("/tim/klijent/1", data={**SETTINGS, **bad}, follow_redirects=True)
+    assert message in resp.text, (bad, text(resp.text)[:300])
+resp = team.post(
+    "/tim/klijent/1", data={**SETTINGS, "range_start": str(month_start), "range_end": str(month_end)}, follow_redirects=True
+)
+assert f"Sada: Od {fmt.date_numeric(month_start)} do {fmt.date_numeric(month_end)}" in text(resp.text)
+
+fake.ranges.clear()
+page = visitor.get(f"{path}?kanal=google_ads").text  # bez izbora: ceo period
+assert hero(page) == (
+    f"Od 1. do {month_days}. {month_name}{with_year} Google Ads oglasi su vam doneli {fmt.conv(1.5 * month_days)} upita, "
+    "po prosečnoj ceni od 20,00 € po upitu."
+), hero(page)
+assert ("google_ads", month_start, month_end) in fake.ranges
+assert f'min="{month_start}"' in page and f'max="{month_end}"' in page
+labels = re.findall(r'>([^<]+)</a>', page.split('aria-label="Brzi izbor perioda"')[1].split("</nav>")[0])
+assert labels == ["Ceo period", "30 dana", "7 dana", "1 dan"], labels
+calls = len(fake.ranges)
+two = visitor.get(f"{path}?kanal=google_ads&od={month_start + timedelta(days=4)}&do={month_start + timedelta(days=5)}").text
+assert hero(two) == f"Od 5. do 6. {month_name}{with_year} Google Ads oglasi su vam doneli 3 upita, po prosečnoj ceni od 20,00 € po upitu."
+assert len(fake.ranges) == calls, "kraci period unutar odobrenog ne trazi dnevne brojke ponovo"
+one = visitor.get(f"{path}?kanal=meta&od={month_end}&do={month_end}").text
+assert hero(one).startswith(f"Dana {month_end.day}. {month_name}{with_year} Meta Ads oglasi su vam doneli 2 upita")
+assert 'class="bars"' not in one, "za jedan dan nema grafikona"
+# Pokusaj izlaska iz perioda se svodi na odobreni period.
+outside = visitor.get(f"{path}?kanal=google_ads&od={month_start - timedelta(days=40)}&do={YESTERDAY}").text
+assert hero(outside) == hero(page)
+combined = visitor.get(f"{path}?kanal=ukupno&od={month_start}&do={month_start + timedelta(days=9)}").text
+assert hero(combined) == f"Od 1. do 10. {month_name}{with_year} oglasi na svim kanalima su vam doneli 45 upita."
+assert ("tiktok", month_start, month_end) in fake.ranges or any(r[0] == "tiktok" and r[2] == month_end for r in fake.ranges)
+site = visitor.get(f"{path}?kanal=ga4&od={month_start}&do={month_start + timedelta(days=1)}").text
+assert hero(site) == f"Od 1. do 2. {month_name}{with_year} vaš sajt je imao 82 posete."
+# Lista za tim i dalje pokazuje poslednjih 30 dana.
+assert "1.110 € i 90 $" in text(team.get("/tim").text)
+
+# Otvoren kraj: od datuma do juce, period raste sam.
+team.post("/tim/klijent/1", data={**SETTINGS, "range_start": str(YESTERDAY - timedelta(days=9)), "range_end": ""})
+page = visitor.get(f"{path}?kanal=google_ads").text
+assert hero(page).startswith("U poslednjih 10 dana Google Ads oglasi su vam doneli 15 upita")
+assert "do juče, i period se sam produžava" in text(team.get("/tim/klijent/1").text)
+assert hero(visitor.get(f"{path}?kanal=google_ads&od={YESTERDAY}&do={YESTERDAY}").text).startswith("Juče Google Ads oglasi")
+
+# Period koji jos nije poceo.
+team.post("/tim/klijent/1", data={**SETTINGS, "range_start": str(YESTERDAY + timedelta(days=3)), "range_end": ""})
+assert "Izveštaj počinje" in visitor.get(path).text
+
+# Bez perioda: kao ranije, poslednjih 30 od 90 dana.
+team.post("/tim/klijent/1", data={**SETTINGS, "range_start": "", "range_end": ""})
+page = visitor.get(f"{path}?kanal=google_ads").text
+assert hero(page).startswith("U poslednjih 30 dana Google Ads oglasi")
+labels = re.findall(r'>([^<]+)</a>', page.split('aria-label="Brzi izbor perioda"')[1].split("</nav>")[0])
+assert labels == ["90 dana", "30 dana", "7 dana", "1 dan"], labels
+
+# 13. Klijent ne vidi tim, ni pregled, ni nepostojece linkove.
+assert visitor.get("/tim").status_code == 302 and visitor.get("/tim/klijent/1/pregled").status_code == 302
+assert visitor.get("/k/nepostoji").status_code == 404
+
+# 14. Kad platforma ne radi, prikazuju se ranije sacuvani podaci; tim vidi napomenu, klijent ne.
+with flask_app.app_context():
+    db.execute("UPDATE portal_cache SET fetched_at = ?", (int(time.time()) - 7 * 3600,))
+fake.down = {"meta", "microsoft"}
+page = visitor.get(f"{path}?kanal=meta").text
+assert "doneli 60 upita" in hero(page) and "Napomene za tim" not in page
+preview = text(team.get("/tim/klijent/1/pregled?kanal=meta").text)
+assert "Napomene za tim" in preview and "Invalid OAuth access token." in preview
+preview = text(team.get("/tim/klijent/1/pregled?kanal=ukupno").text)
+assert "doneli 135 upita" in preview and "Microsoft Ads (Bing): u zbiru su ranije sačuvani podaci" in preview
+fake.down = set()
+
+# 15. Prekinut kanal: klijent dobija poruku bez tehnickih detalja, ostali kanali rade.
+team.post("/tim/izvor/meta/prekini", data={"_csrf": token})
+page = visitor.get(f"{path}?kanal=meta").text
+assert "Podaci za ovaj izveštaj trenutno nisu dostupni." in page and "token" not in text(page).lower()
+assert "doneli 45 upita" in hero(visitor.get(f"{path}?kanal=google_ads").text)
+assert "Meta Ads: kanal nije povezan" in text(team.get("/tim").text)
+settings = text(team.get("/tim/klijent/1").text)
+assert "Izabran je nalog Hrast Meta (9001), ali kanal trenutno nije povezan." in settings
+team.post("/tim/klijent/1", data={k: v for k, v in SETTINGS.items() if "meta" not in k})
+with flask_app.app_context():
+    assert db.query("SELECT account_id FROM portal_sources WHERE platform = 'meta'") == [{"account_id": "9001"}]
+
+# 16. Prekid Google veze opoziva dozvolu; klijent bez ijednog kanala vidi samo poruku.
+team.post("/tim/izvor/google/prekini", data={"_csrf": token})
+assert fake.count(google_auth.REVOKE_URL) == 1
+team.post("/tim/dodaj", data={"_csrf": token, "name": "Prazan klijent"})
+team.post("/tim/klijent/2/lozinka", data={"_csrf": token})
+empty = urlparse(re.search(r'id="link">([^<]+)<', team.get("/tim/klijent/2").text).group(1)).path
+assert "Lozinka" in visitor.get(empty).text  # lozinka prvog klijenta ne otvara drugog
+resp = team.get("/tim/klijent/2/pregled", follow_redirects=True)
+assert "Klijent još nema nijedan kanal" in resp.text
+
+# 17. Uklanjanje klijenta gasi njegov link i brise njegove kanale.
+team.post("/tim/klijent/1/ukloni", data={"_csrf": token})
+assert visitor.get(path).status_code == 404
+with flask_app.app_context():
+    assert db.query("SELECT * FROM portal_sources") == []
+
+# 18. Odjava.
+team.post("/tim/odjava", data={"_csrf": token})
+assert team.get("/tim").status_code == 302
+
+assert fmt.money_sum({"EUR": 10, "RSD": 5}) == "10 € i 5 RSD"
+print("SVE PROVERE SU PROSLE")

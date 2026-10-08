@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block body %}
+<header class="topbar">
+  <div class="topbar-inner row between gap-12">
+    <div class="row gap-16">
+      <a href="{{ url_for('clients') }}"><img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious"></a>
+      <span class="pill ok">Pregled za tim</span>
+      {% if team_user %}
+      <nav class="nav" aria-label="Glavni meni">
+        <a href="{{ url_for('clients') }}" {% if request.endpoint in ('clients', 'client_settings') %}aria-current="page"{% endif %}>Klijenti</a>
+        <a href="{{ url_for('data_source') }}" {% if request.endpoint == 'data_source' %}aria-current="page"{% endif %}>Izvor podataka</a>
+      </nav>
+      {% endif %}
+    </div>
+    {% if team_user %}
+    <form class="row gap-16" method="post" action="{{ url_for('team_logout') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <span class="muted small">{{ team_user.name }}</span>
+      <button class="btn" type="submit">Odjavi se</button>
+    </form>
+    {% endif %}
+  </div>
+</header>
+<main class="page stack gap-24">
+  {% for category, message in get_flashed_messages(with_categories=true) %}
+  <p class="flash{% if category == 'error' %} error{% endif %}" role="{% if category == 'error' %}alert{% else %}status{% endif %}">{{ message }}</p>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+{% endblock %}

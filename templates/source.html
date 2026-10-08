@@ -1,0 +1,191 @@
+{% extends "team_base.html" %}
+{% block title %}Izvor podataka{% endblock %}
+
+{% macro pill(channel) %}
+  {% if channel.connected and not channel.error %}<span class="pill ok">Povezano</span>
+  {% elif channel.connected %}<span class="pill warn">Ne radi</span>
+  {% else %}<span class="pill off">Nije povezano</span>{% endif %}
+{% endmacro %}
+
+{% macro state(channel, noun) %}
+  {% if channel.connection %}
+  <div class="status-row">
+    <div>
+      <strong>{{ channel.connection.label }}</strong>
+      <div class="muted small">Povezao {{ channel.connection.connected_by }}, {{ channel.connection.connected_at[:10] }}</div>
+      {% if channel.error %}<div class="problem small">Provera nije prošla: {{ channel.error }}</div>
+      {% elif channel.accounts is not none %}<div class="muted small">{{ noun }} koje portal vidi: {{ channel.accounts }}.</div>{% endif %}
+    </div>
+    <form method="post" action="{{ url_for('data_source_disconnect', platform=channel.key) }}" onsubmit="return confirm('Prekinuti vezu? Izveštaji za ovaj kanal neće raditi dok se ponovo ne poveže.')">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <button class="btn danger" type="submit">Prekini vezu</button>
+    </form>
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="stack gap-8">
+  <h1>Izvor podataka</h1>
+  <p class="muted" style="max-width: 68ch">Svaki kanal se povezuje posebno i nezavisno od ostalih. Portal sa svih kanala samo čita podatke i ništa ne menja u nalozima.</p>
+</div>
+
+<div class="split">
+  <div class="main stack gap-24">
+
+    <section class="card stack gap-16">
+      <div class="row between gap-12">
+        <h2>Google Ads i Analytics</h2>
+        {% if google %}<span class="pill ok">Povezano</span>{% else %}<span class="pill off">Nije povezano</span>{% endif %}
+      </div>
+      {% if google %}
+      <div class="status-row">
+        <div>
+          <strong>{{ google.label }}</strong>
+          <div class="muted small">Povezao {{ google.connected_by }}, {{ google.connected_at[:10] }}</div>
+        </div>
+        <form method="post" action="{{ url_for('data_source_disconnect', platform='google') }}" onsubmit="return confirm('Prekinuti vezu? Google Ads i Analytics izveštaji neće raditi dok se nalog ponovo ne poveže.')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn danger" type="submit">Prekini vezu</button>
+        </form>
+      </div>
+      <div class="status-row">
+        <div>
+          <strong>Google Ads</strong>
+          <div class="muted small">
+            {% if not google_ads.connected %}Dozvola nije data. Povežite ponovo i ostavite uključen pristup Google Ads-u.
+            {% elif not google_ads.configured %}Upišite <code>GOOGLE_ADS_ACCOUNT_IDS</code> ili <code>GOOGLE_ADS_MCC_ID</code>.
+            {% elif google_ads.error %}Provera nije prošla: {{ google_ads.error }}
+            {% elif only_ids %}Čita samo naloge koje ste naveli: {% for id in only_ids %}{{ account_label('google_ads', id) }}{% if not loop.last %}, {% endif %}{% endfor %}.
+            {% else %}Aktivnih naloga ispod MCC-a {{ account_label('google_ads', mcc_id) }}: {{ google_ads.accounts }}.
+            {% endif %}
+          </div>
+        </div>
+        {% if google_ads.connected and google_ads.configured and not google_ads.error %}<span class="pill ok">Radi</span>{% else %}<span class="pill warn">Ne radi</span>{% endif %}
+      </div>
+      <div class="status-row">
+        <div>
+          <strong>Google Analytics</strong>
+          <div class="muted small">{% if has_analytics %}Dozvola za čitanje je data. GA4 property birate u podešavanjima svakog klijenta.{% else %}Dozvola nije data. Povežite ponovo i ostavite uključen pristup Analytics-u.{% endif %}</div>
+        </div>
+        {% if has_analytics %}<span class="pill ok">Dozvoljeno</span>{% else %}<span class="pill warn">Nije dozvoljeno</span>{% endif %}
+      </div>
+      {% endif %}
+      {% if google_ready %}
+      <form method="post" action="{{ url_for('google_start') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="svrha" value="connect">
+        <button class="btn primary" type="submit">{% if google %}Poveži ponovo{% else %}Poveži Google nalog{% endif %}</button>
+      </form>
+      <p class="muted small">Portal čita u ime Google naloga koji povežete, pa se u Google Ads-u ne dodaje nov korisnik. Google će na ekranu za dozvolu napisati da aplikacija može da upravlja kampanjama, jer Google Ads nema dozvolu samo za čitanje.</p>
+      {% else %}
+      <p class="notice small">Upišite <code>GOOGLE_CLIENT_ID</code> i <code>GOOGLE_CLIENT_SECRET</code> u podešavanja aplikacije.</p>
+      {% endif %}
+    </section>
+
+    <section class="card stack gap-16">
+      <div class="row between gap-12"><h2>Meta Ads</h2>{{ pill(meta) }}</div>
+      {{ state(meta, "Oglasnih naloga") }}
+      <form class="stack gap-8" method="post" action="{{ url_for('meta_connect') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <label class="field" for="meta_token_input">Token sistemskog korisnika</label>
+        <input id="meta_token_input" name="token" type="password" autocomplete="off" required>
+        <div><button class="btn primary" type="submit">{% if meta.connected %}Zameni token{% else %}Poveži Meta Ads{% endif %}</button></div>
+      </form>
+      <details class="small">
+        <summary>Kako se dobija token</summary>
+        <ol class="steps muted" style="margin-top: 8px">
+          <li>Na developers.facebook.com napravite aplikaciju i dodajte joj proizvod Marketing API.</li>
+          <li>U Business Manager-u otvorite Business settings, Users, System users i napravite sistemskog korisnika.</li>
+          <li>Dodelite mu oglasne naloge klijenata, sa pravom pregleda.</li>
+          <li>Kliknite Generate token, izaberite aplikaciju i dozvolu <code>ads_read</code>, pa token nalepite ovde.</li>
+        </ol>
+      </details>
+      <p class="muted small">Token se čuva šifrovan. Posle čuvanja više se ne prikazuje.</p>
+    </section>
+
+    <section class="card stack gap-16">
+      <div class="row between gap-12"><h2>Microsoft Ads (Bing)</h2>{{ pill(microsoft) }}</div>
+      {{ state(microsoft, "Naloga") }}
+      {% if microsoft.configured %}
+      <form method="post" action="{{ url_for('microsoft_start') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="btn primary" type="submit">{% if microsoft.connected %}Poveži ponovo{% else %}Poveži Microsoft Ads{% endif %}</button>
+      </form>
+      {% else %}
+      <p class="notice small">Upišite <code>MICROSOFT_ADS_CLIENT_ID</code>, <code>MICROSOFT_ADS_CLIENT_SECRET</code> i <code>MICROSOFT_ADS_DEVELOPER_TOKEN</code> u podešavanja aplikacije.</p>
+      {% endif %}
+      <details class="small">
+        <summary>Šta je potrebno</summary>
+        <ol class="steps muted" style="margin-top: 8px">
+          <li>Developer token: u Microsoft Ads-u, na strani za developere (developers.ads.microsoft.com), zatražite token za vaš nalog.</li>
+          <li>Aplikacija: u Microsoft Entra (Azure) portalu registrujte aplikaciju tipa Web, sa ovom adresom za povratak: <code>{{ callbacks.microsoft }}</code></li>
+          <li>U aplikaciji napravite Client secret, pa Client ID, secret i developer token upišite u podešavanja portala.</li>
+        </ol>
+      </details>
+    </section>
+
+    <section class="card stack gap-16">
+      <div class="row between gap-12"><h2>TikTok Ads</h2>{{ pill(tiktok) }}</div>
+      {{ state(tiktok, "Oglašivača") }}
+      {% if tiktok.configured %}
+      <form method="post" action="{{ url_for('tiktok_start') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="btn primary" type="submit">{% if tiktok.connected %}Poveži ponovo{% else %}Poveži TikTok Ads{% endif %}</button>
+      </form>
+      <details class="small">
+        <summary>Ako vas TikTok ne vrati na portal</summary>
+        <form class="stack gap-8" style="margin-top: 8px" method="post" action="{{ url_for('tiktok_connect_code') }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <p class="muted">Posle odobrenja TikTok vas šalje na adresu koja u sebi ima <code>auth_code=…</code>. Prepišite tu vrednost ovde.</p>
+          <label class="field" for="tiktok-code">Kod (auth_code)</label>
+          <input id="tiktok-code" name="auth_code" type="text" autocomplete="off">
+          <div><button class="btn" type="submit">Poveži kodom</button></div>
+        </form>
+      </details>
+      {% else %}
+      <p class="notice small">Upišite <code>TIKTOK_APP_ID</code> i <code>TIKTOK_APP_SECRET</code> u podešavanja aplikacije.</p>
+      {% endif %}
+      <details class="small">
+        <summary>Šta je potrebno</summary>
+        <ol class="steps muted" style="margin-top: 8px">
+          <li>Na TikTok API for Business portalu (business-api.tiktok.com) napravite developersku aplikaciju i zatražite dozvolu za izveštaje (Reporting). Odobrenje ume da potraje danima.</li>
+          <li>Kao adresu za povratak upišite: <code>{{ callbacks.tiktok }}</code></li>
+          <li>App ID i Secret upišite u podešavanja portala.</li>
+        </ol>
+      </details>
+    </section>
+
+    <section class="card stack gap-12">
+      <h2>Osvežavanje podataka</h2>
+      <p class="muted" style="max-width: 68ch">Brojke se pamte {{ cache_hours }} sati, da se strane otvaraju brzo i da se ne troše dnevna ograničenja platformi. Izveštaji prikazuju stanje zaključno sa jučerašnjim danom.</p>
+      <form method="post" action="{{ url_for('data_source_refresh') }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="btn" type="submit">Osveži podatke za sve klijente</button>
+      </form>
+    </section>
+  </div>
+
+  <aside class="side card stack gap-16">
+    <h2>Podešavanja aplikacije</h2>
+    <div class="status-row">
+      <div><strong>Ko može da se prijavi</strong><div class="muted small">Google nalozi sa domena {{ domain }}</div></div>
+    </div>
+    <div class="status-row">
+      <div>
+        <strong>Koje Google Ads naloge portal čita</strong>
+        <div class="muted small">
+          {% if only_ids %}Samo: {% for id in only_ids %}{{ account_label('google_ads', id) }}{% if not loop.last %}, {% endif %}{% endfor %}{% if mcc_id %}, kroz MCC {{ account_label('google_ads', mcc_id) }}{% endif %}
+          {% elif mcc_id %}Sve aktivne naloge ispod MCC-a {{ account_label('google_ads', mcc_id) }}
+          {% else %}<code>GOOGLE_ADS_ACCOUNT_IDS</code> ili <code>GOOGLE_ADS_MCC_ID</code>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="stack gap-8 line-row">
+      <strong>Google adresa za povratak</strong>
+      <span class="muted small">Upisuje se kao Authorized redirect URI u Google Cloud konzoli.</span>
+      <code>{{ callbacks.google }}</code>
+    </div>
+  </aside>
+</div>
+{% endblock %}

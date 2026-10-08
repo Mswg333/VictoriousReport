@@ -1,0 +1,181 @@
+/* Victorious portal. Boje su uzete iz logoa. */
+:root {
+  --ink: #231F20;
+  --muted: #5E5F62;
+  --purple: #975DA5;        /* popune: dugmad, grafikon */
+  --purple-dark: #7A4588;   /* tekst i okviri, citljivije na svetloj pozadini */
+  --purple-deep: #5E3069;
+  --purple-tint: #EFE4F2;
+  --pink: #F598B9;
+  --pink-tint: #FDE6EE;
+  --raspberry: #8E2452;
+  --line: #DDD5E1;
+  --line-soft: #EAE4ED;
+  --ground: #FAF8FB;
+  --white: #FFFFFF;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: 'Poppins', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+a { color: var(--purple-dark); }
+a:hover { color: var(--purple-deep); }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-weight: 700; font-size: 40px; line-height: 1.1; letter-spacing: -0.02em; }
+h2 { font-weight: 700; font-size: 20px; }
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stack { display: flex; flex-direction: column; }
+.row { display: flex; flex-wrap: wrap; align-items: center; }
+.between { justify-content: space-between; }
+.gap-4 { gap: 4px; } .gap-8 { gap: 8px; } .gap-12 { gap: 12px; }
+.gap-16 { gap: 16px; } .gap-24 { gap: 24px; } .gap-48 { gap: 48px; }
+
+/* zaglavlje */
+.topbar { background: var(--white); border-bottom: 1px solid var(--line); padding: 12px 24px; }
+.topbar-inner { max-width: 1160px; margin: 0 auto; }
+.logo { display: block; height: 44px; width: auto; }
+.client-name { padding-left: 20px; border-left: 1px solid var(--line); }
+.client-name strong { display: block; font-weight: 600; font-size: 20px; line-height: 1.2; }
+
+.page { max-width: 1160px; margin: 0 auto; padding: 32px 24px 56px; }
+.page.narrow { max-width: 1080px; }
+
+/* dugmad */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 16px; border-radius: 8px;
+  border: 1px solid var(--purple-dark); background: var(--white); color: var(--purple-dark);
+  font-weight: 600; text-decoration: none;
+}
+.btn:hover { color: var(--purple-deep); border-color: var(--purple-deep); }
+.btn.primary { min-height: 50px; padding: 0 20px; border: 0; border-radius: 10px; background: var(--purple); color: var(--white); }
+.btn.primary:hover { background: var(--purple-dark); color: var(--white); }
+.btn.wide { width: 100%; }
+.linklike { border: 0; background: none; padding: 0; color: var(--purple-dark); font-weight: 600; text-decoration: underline; min-height: 44px; }
+
+/* izbor perioda */
+.periods { display: flex; gap: 2px; padding: 3px; background: var(--white); border: 1px solid var(--line); border-radius: 10px; }
+.periods a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px;
+  border-radius: 8px; font-weight: 600; color: var(--ink); text-decoration: none;
+}
+.periods a[aria-current="true"] { background: var(--ink); color: var(--white); }
+
+/* oznake */
+.pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.pill.ok { background: var(--purple-tint); color: var(--purple-deep); }
+.pill.warn { background: var(--pink-tint); color: var(--raspberry); }
+.pill.off { background: var(--line-soft); color: var(--muted); }
+
+/* kartice i tabele */
+.card { background: var(--white); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+.card.accent { border-color: var(--purple-dark); }
+.table-box { background: var(--white); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { padding: 12px 20px; text-align: left; color: var(--muted); font-size: 13px; font-weight: 600; white-space: nowrap; }
+th.num { text-align: right; }
+td { padding: 12px 20px; border-top: 1px solid var(--line-soft); vertical-align: middle; }
+td.name strong { display: block; font-weight: 600; font-size: 16px; }
+tr.total td { border-top: 2px solid var(--ink); font-weight: 700; }
+.line-row { padding-top: 16px; border-top: 1px solid var(--line-soft); }
+
+/* poruke */
+.flash { padding: 12px 16px; border-radius: 10px; background: var(--purple-tint); color: var(--purple-deep); font-weight: 600; }
+.notice { padding: 12px 16px; border-radius: 10px; background: var(--pink-tint); color: var(--raspberry); }
+.error { color: #A3123E; font-weight: 600; }
+.preview-bar { background: var(--ink); color: var(--white); padding: 10px 24px; text-align: center; }
+.preview-bar a { color: var(--white); font-weight: 600; }
+
+/* forme */
+label.field { font-weight: 600; }
+input[type=text], input[type=email], input[type=password], select {
+  width: 100%; min-height: 50px; padding: 0 14px; background: var(--white); color: var(--ink);
+  border: 1px solid #8A7F8F; border-radius: 10px;
+}
+.check { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 12px 0 4px; border-top: 1px solid var(--line-soft); cursor: pointer; }
+.check input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--purple); flex: none; }
+.check strong { display: block; font-weight: 600; }
+.secret { padding: 12px 14px; background: var(--ground); border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
+.secret.big { font-size: 20px; font-weight: 600; letter-spacing: 0.04em; }
+
+/* dve kolone u podesavanjima */
+.split { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px; }
+.split > .main { flex: 999 1 560px; min-width: 0; }
+.split > .side { flex: 1 1 340px; min-width: 0; }
+
+/* ulaz za klijenta i prijava tima */
+.gate { min-height: calc(100vh - 81px); display: flex; align-items: center; justify-content: center; padding: 48px 24px; }
+.gate-box { width: 100%; max-width: 460px; }
+.gate-box h1 { font-size: 44px; line-height: 1.08; }
+
+/* izvestaj */
+.hero { max-width: 24ch; font-weight: 600; font-size: 46px; line-height: 1.12; }
+.figures { display: flex; flex-wrap: wrap; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line); }
+.figure { flex: 1 1 180px; padding: 20px 20px 20px 0; }
+.figure strong, .big-number { display: block; font-weight: 600; font-size: 32px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.bars { display: flex; align-items: flex-end; gap: 4px; height: 180px; border-bottom: 1px solid var(--ink); }
+.bar { flex: 1 1 0; min-width: 2px; background: var(--purple); border-radius: 3px 3px 0 0; }
+.bar.peak { background: var(--pink); }
+.page-row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--line-soft); }
+.footer { padding-top: 24px; border-top: 1px solid var(--line); }
+
+@media (max-width: 640px) {
+  h1 { font-size: 32px; }
+  .hero { font-size: 34px; }
+  .gate-box h1 { font-size: 36px; }
+  .client-name { padding-left: 0; border-left: 0; }
+}
+
+/* navigacija za tim */
+.nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 8px; font-weight: 600; color: var(--ink); text-decoration: none; }
+.nav a:hover { background: var(--ground); }
+.nav a[aria-current="page"] { background: var(--purple-tint); color: var(--purple-deep); }
+
+/* poruke o greskama i uputstva */
+.flash.error { background: var(--pink-tint); color: var(--raspberry); }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--line-soft); padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.status-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.btn.danger { border-color: var(--raspberry); color: var(--raspberry); }
+.btn.danger:hover { border-color: #6E1B40; color: #6E1B40; }
+td.problem { color: var(--raspberry); min-width: 300px; }
+td.name { min-width: 220px; }
+td.name .small { white-space: nowrap; }
+.google-btn { gap: 12px; }
+.google-btn svg { flex: none; }
+
+/* kartice izvestaja po kanalu */
+.tabs { display: flex; gap: 4px; margin: 12px auto -13px; overflow-x: auto; }
+.tabs a {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; white-space: nowrap;
+  border-bottom: 3px solid transparent; font-weight: 600; color: var(--muted); text-decoration: none;
+}
+.tabs a:hover { color: var(--ink); }
+.tabs a[aria-current="page"] { color: var(--purple-deep); border-bottom-color: var(--purple); }
+.problem { color: var(--raspberry); }
+details summary { cursor: pointer; font-weight: 600; color: var(--purple-dark); min-height: 32px; }
+
+/* izbor perioda u izvestaju */
+.range-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 12px auto 0; }
+.range-field { display: flex; flex-direction: column; gap: 4px; }
+.range-field label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.range-form input[type=date], input[type=date] {
+  min-height: 44px; padding: 0 12px; background: var(--white); color: var(--ink);
+  border: 1px solid #8A7F8F; border-radius: 8px; font: inherit;
+}
+.periods a { white-space: nowrap; }
+@media (max-width: 640px) {
+  .periods a { padding: 0 10px; }
+}

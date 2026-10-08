@@ -1,0 +1,89 @@
+{% extends "team_base.html" %}
+{% block title %}Klijenti{% endblock %}
+{% block content %}
+<div class="row between gap-24" style="align-items: flex-end">
+  <div class="stack gap-8">
+    <h1>Klijenti</h1>
+    <p class="muted">Na portalu: {{ count_text }}.{% if total_spend %} Ukupno potrošeno {{ total_spend }} u poslednjih {{ days }} dana, na svim kanalima.{% endif %}</p>
+  </div>
+  <div class="row gap-12">
+    <nav class="periods" aria-label="Period">
+      {% for d in periods %}
+      <a href="{{ url_for('clients', dana=d) }}" {% if d == days %}aria-current="true"{% endif %}>{{ d }} dana</a>
+      {% endfor %}
+    </nav>
+    {% if add_open %}
+    <a class="btn primary" href="{{ url_for('clients', dana=days) }}">Zatvori dodavanje</a>
+    {% else %}
+    <a class="btn primary" href="{{ url_for('clients', dana=days, dodaj=1) }}">Dodaj klijenta</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if add_open %}
+<form class="card accent stack gap-12" method="post" action="{{ url_for('add_client') }}">
+  <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+  <div class="stack gap-4">
+    <h2>Novi klijent</h2>
+    <p class="muted">Posle ovoga birate njegove naloge po kanalima i pravite link i lozinku.</p>
+  </div>
+  <div class="stack gap-8" style="max-width: 460px">
+    <label class="field" for="name">Ime klijenta</label>
+    <input id="name" name="name" type="text" maxlength="120" required autofocus>
+  </div>
+  <div><button class="btn primary" type="submit">Dodaj klijenta</button></div>
+</form>
+{% endif %}
+
+{% if items %}
+<div class="table-box">
+  <table>
+    <thead>
+      <tr>
+        <th>Klijent</th>
+        <th class="num">Potrošeno</th>
+        <th class="num">Klikovi</th>
+        <th class="num">Konverzije</th>
+        <th>Klijentski link</th>
+        <th><span style="position:absolute;left:-9999px">Radnje</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in items %}
+      <tr>
+        <td class="name">
+          <strong>{{ c.name }}</strong>
+          <span class="muted small">{% if c.channels %}{{ c.channels|join(', ') }}{% else %}Nema izabranih kanala{% endif %}</span>
+          {% for problem in c.problems %}<span class="problem small" style="display: block">{{ problem }}</span>{% endfor %}
+        </td>
+        {% if c.has_numbers %}
+        <td class="num"><strong>{{ c.spend }}</strong></td>
+        <td class="num">{{ c.clicks }}</td>
+        <td class="num">{{ c.conversions }}</td>
+        {% else %}
+        <td class="muted" colspan="3">Nema brojki za prikaz</td>
+        {% endif %}
+        <td>
+          {% if c.status == 'active' %}<span class="pill ok">Aktivan</span>
+          {% elif c.status == 'off' %}<span class="pill off">Isključen</span>
+          {% else %}<span class="pill warn">Nije napravljen</span>{% endif %}
+        </td>
+        <td class="num"><a class="btn" href="{{ url_for('client_settings', client_id=c.id) }}">Podešavanja</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif not add_open %}
+<section class="card stack gap-12">
+  <h2>Još nema klijenata na portalu</h2>
+  <p class="muted" style="max-width: 68ch">Prvo na strani Izvor podataka povežite kanale koje koristite, pa dodajte klijenta i izaberite njegove naloge.</p>
+  <div class="row gap-12">
+    <a class="btn primary" href="{{ url_for('clients', dana=days, dodaj=1) }}">Dodaj klijenta</a>
+    <a class="btn" href="{{ url_for('data_source') }}">Otvori izvor podataka</a>
+  </div>
+</section>
+{% endif %}
+
+<p class="muted" style="max-width: 68ch">Ovu stranu vide samo članovi tima. Klijent otvara svoj link, unosi lozinku i vidi isključivo svoje izveštaje.</p>
+{% endblock %}

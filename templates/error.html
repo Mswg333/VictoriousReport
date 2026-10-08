@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Greška{% endblock %}
+{% block body %}
+<header class="topbar">
+  <div class="topbar-inner"><img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious"></div>
+</header>
+<main class="gate">
+  <div class="gate-box stack gap-16">
+    {% if code == 404 %}
+    <h1>Ova strana ne postoji</h1>
+    <p class="muted">Proverite da li ste otvorili ceo link koji ste dobili od agencije.</p>
+    {% else %}
+    <h1>Zahtev nije prošao</h1>
+    <p class="muted">{{ message }}</p>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

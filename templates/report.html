@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}{{ client.name }}: rezultati kampanja{% endblock %}
+{% block body %}
+{% if preview %}
+<div class="preview-bar small">Ovo je pregled za tim. Klijent vidi isto, bez ove trake. <a href="{{ url_for('client_settings', client_id=client.id) }}">Nazad na podešavanja</a></div>
+{% endif %}
+
+<header class="topbar">
+  <div class="topbar-inner row between gap-16" style="max-width: 1080px">
+    <div class="row gap-16">
+      <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious">
+      <div class="client-name"><strong>{{ client.name }}</strong><span class="muted small">Izveštaj o kampanjama</span></div>
+    </div>
+    {% if presets %}
+    <nav class="periods" aria-label="Brzi izbor perioda" style="background: var(--ground)">
+      {% for p in presets %}
+      <a href="{{ p.url }}" {% if p.active %}aria-current="true"{% endif %}>{{ p.label }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+  </div>
+  {% if not not_started %}
+  <form class="range-form" method="get" action="{{ range_form.action }}" style="max-width: 1080px">
+    <input type="hidden" name="kanal" value="{{ range_form.tab }}">
+    <div class="range-field">
+      <label for="od">Od</label>
+      <input id="od" name="od" type="date" value="{{ range_form.start }}" min="{{ range_form.min }}" max="{{ range_form.max }}" required>
+    </div>
+    <div class="range-field">
+      <label for="do">Do</label>
+      <input id="do" name="do" type="date" value="{{ range_form.end }}" min="{{ range_form.min }}" max="{{ range_form.max }}" required>
+    </div>
+    <button class="btn" type="submit">Prikaži</button>
+    {% if view %}<span class="muted small">{{ view.range_text }}</span>{% endif %}
+  </form>
+  {% endif %}
+  {% if tabs|length > 1 %}
+  <nav class="tabs" aria-label="Izveštaji" style="max-width: 1080px">
+    {% for t in tabs %}
+    <a href="{{ t.url }}" {% if t.key == tab %}aria-current="page"{% endif %}>{{ t.name }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+</header>
+
+<main class="page narrow stack gap-48" style="padding-top: 48px">
+
+  {% if team_notes %}
+  <section class="notice stack gap-4" role="status">
+    <strong>Napomene za tim (klijent ih ne vidi)</strong>
+    {% for note in team_notes %}<span>{{ note }}</span>{% endfor %}
+  </section>
+  {% endif %}
+
+  {% if not_started %}
+  <section class="stack gap-16">
+    <h1 class="hero">Izveštaj počinje {{ not_started }}.</h1>
+    <p class="muted" style="max-width: 60ch">Brojke se pojavljuju dan nakon početka perioda. Ako imate pitanje, javite se svom kontaktu u agenciji Victorious.</p>
+  </section>
+  {% elif not view %}
+  <section class="stack gap-16">
+    <h1 class="hero">Podaci za ovaj izveštaj trenutno nisu dostupni.</h1>
+    <p class="muted" style="max-width: 60ch">Pokušajte ponovo malo kasnije. Ako se ovo ponavlja, javite se svom kontaktu u agenciji Victorious.</p>
+  </section>
+  {% else %}
+
+  <section class="stack" style="gap: 32px">
+    <h1 class="hero">{{ view.hero }}</h1>
+    {% if view.figures %}
+    <div class="figures">
+      {% for f in view.figures %}
+      <div class="figure"><strong>{{ f.value }}</strong><span class="muted">{{ f.label }}</span></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  {% if view.chart %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>{{ view.chart.title }}</h2>
+      <p class="muted">{{ view.chart.note }}</p>
+    </div>
+    <div class="card stack gap-8" style="padding-bottom: 16px">
+      <div class="bars" role="img" aria-label="{{ view.chart.title }}. {{ view.chart.note }}">
+        {% for b in view.chart.bars %}<div class="bar{% if b.peak %} peak{% endif %}" style="height: {{ b.height }}px" title="{{ b.tip }}"></div>{% endfor %}
+      </div>
+      <div class="row between muted small"><span>{{ view.chart.first }}</span><span>{{ view.chart.last }}</span></div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if view.table %}
+  <section class="stack gap-16">
+    <h2>{{ view.table.title }}</h2>
+    <div class="table-box">
+      <table>
+        <thead>
+          <tr>{% for column in view.table.columns %}<th {% if not loop.first %}class="num"{% endif %}>{{ column }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for row in view.table.rows %}
+          <tr>{% for cell in row %}<td {% if not loop.first %}class="num"{% endif %}>{% if loop.first %}<strong style="font-weight: 600">{{ cell }}</strong>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+          {% endfor %}
+          <tr class="total">{% for cell in view.table.total %}<td {% if not loop.first %}class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if view.terms %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Šta su ljudi tražili</h2>
+      <p class="muted">Pojmovi koje su ljudi ukucali u Google pre nego što su kliknuli na oglas.</p>
+    </div>
+    <div class="card stack gap-4">
+      {% for t in view.terms %}
+      <div class="page-row"><span style="overflow-wrap: anywhere">{{ t.term }}</span><strong class="num" style="font-weight: 600">{{ t.clicks }} {{ t.word }}</strong></div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if view.kind == 'site' and (view.channels or view.pages) %}
+  <section class="row gap-24" style="align-items: stretch">
+    {% if view.channels %}
+    <div class="card stack gap-4" style="flex: 1 1 360px">
+      <h2 style="margin-bottom: 8px">Odakle dolaze posete</h2>
+      {% for c in view.channels %}
+      <div class="page-row"><span>{{ c.name }}</span><strong class="num" style="font-weight: 600">{{ c.value }}</strong></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if view.pages %}
+    <div class="card stack gap-4" style="flex: 1 1 360px">
+      <h2 style="margin-bottom: 8px">Najgledanije strane</h2>
+      {% for p in view.pages %}
+      <div class="page-row"><span style="overflow-wrap: anywhere">{{ p.name }}</span><strong class="num" style="font-weight: 600">{{ p.value }}</strong></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <footer class="footer muted stack gap-4">
+    <p>Izveštaj prikazuje stanje zaključno sa {{ view.last_label }} i osvežava se nekoliko puta dnevno.</p>
+    <p>Imate pitanje o rezultatima? Javite se svom kontaktu u agenciji Victorious.</p>
+  </footer>
+  {% endif %}
+</main>
+{% endblock %}

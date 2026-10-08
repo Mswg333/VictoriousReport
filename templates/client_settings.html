@@ -1,0 +1,213 @@
+{% extends "team_base.html" %}
+{% block title %}{{ client.name }}{% endblock %}
+{% block content %}
+<div class="stack gap-4">
+  <a href="{{ url_for('clients') }}" style="font-weight: 600; align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center">Svi klijenti</a>
+  <h1>{{ client.name }}</h1>
+</div>
+
+<div class="split">
+  <div class="main stack gap-24">
+
+    <form class="stack gap-24" method="post">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+
+      <section class="card stack gap-8">
+        <div class="stack gap-4">
+          <h2>Kanali</h2>
+          <p class="muted">Za svaki kanal izaberite nalog ovog klijenta. Kanal koji klijentu ne prikazujete i dalje ulazi u vaš pregled.</p>
+        </div>
+
+        {% for ch in channels %}
+        <div class="stack gap-8 line-row">
+          <div class="row between gap-12">
+            <label class="field" for="src_{{ ch.key }}">{{ ch.name }}</label>
+            {% if ch.source %}<span class="pill ok">Izabrano</span>{% else %}<span class="pill off">Nije izabrano</span>{% endif %}
+          </div>
+          {% if not ch.connected %}
+          <p class="muted small">
+            {% if ch.source %}Izabran je nalog {{ ch.source.account_name }} ({{ account_label(ch.key, ch.source.account_id) }}), ali kanal trenutno nije povezan.{% else %}Kanal nije povezan.{% endif %}
+            <a href="{{ url_for('data_source') }}">Povežite ga na strani Izvor podataka.</a>
+          </p>
+          {% elif ch.accounts is none %}
+          <p class="problem small">Lista naloga nije učitana: {{ ch.error }}</p>
+          {% else %}
+          <select id="src_{{ ch.key }}" name="src_{{ ch.key }}">
+            <option value="">Klijent nema ovaj kanal</option>
+            {% set ns = namespace(found=false) %}
+            {% for a in ch.accounts %}
+            <option value="{{ a.id }}" {% if ch.source and ch.source.account_id == a.id %}selected{% set ns.found = true %}{% endif %}>{{ a.name }} ({{ account_label(ch.key, a.id) }}, {{ a.currency }})</option>
+            {% endfor %}
+            {% if ch.source and not ns.found %}
+            <option value="{{ ch.source.account_id }}" selected>{{ ch.source.account_name }} ({{ account_label(ch.key, ch.source.account_id) }}, više nije u listi)</option>
+            {% endif %}
+          </select>
+          <label class="check" style="border-top: 0; padding-top: 4px">
+            <input type="checkbox" name="vis_{{ ch.key }}" value="1" {% if not ch.source or ch.source.visible %}checked{% endif %}>
+            <span><strong>Prikaži klijentu izveštaj za {{ ch.name }}</strong></span>
+          </label>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        <div class="stack gap-8 line-row">
+          <div class="row between gap-12">
+            <label class="field" for="src_ga4">Sajt (Google Analytics, GA4 property)</label>
+            {% if site %}<span class="pill ok">Izabrano</span>{% else %}<span class="pill off">Nije izabrano</span>{% endif %}
+          </div>
+          {% if not has_analytics %}
+          <p class="muted small">Portal nema dozvolu za Analytics. <a href="{{ url_for('data_source') }}">Povežite Google nalog na strani Izvor podataka.</a></p>
+          {% else %}
+          {% if properties %}
+          <select id="src_ga4" name="src_ga4">
+            <option value="">Bez Analytics-a</option>
+            {% set ns = namespace(found=false) %}
+            {% for p in properties %}
+            <option value="{{ p.id }}" {% if site and site.account_id == p.id %}selected{% set ns.found = true %}{% endif %}>{{ p.name }} ({{ p.id }})</option>
+            {% endfor %}
+            {% if site and not ns.found %}
+            <option value="{{ site.account_id }}" selected>Property {{ site.account_id }} (nije u listi)</option>
+            {% endif %}
+          </select>
+          {% else %}
+          <input id="src_ga4" name="src_ga4" type="text" inputmode="numeric" value="{{ site.account_id if site else '' }}" aria-describedby="ga4-pomoc">
+          <p id="ga4-pomoc" class="muted small">
+            Upišite broj iz Analytics-a (Admin, Property details, Property ID).
+            {% if properties_error %}Lista za izbor nije dostupna: {{ properties_error }}{% endif %}
+          </p>
+          {% endif %}
+          <label class="check" style="border-top: 0; padding-top: 4px">
+            <input type="checkbox" name="vis_ga4" value="1" {% if not site or site.visible %}checked{% endif %}>
+            <span><strong>Prikaži klijentu izveštaj o posetama sajtu</strong></span>
+          </label>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="card stack gap-8">
+        <div class="stack gap-4">
+          <h2>Period koji klijent vidi</h2>
+          <p class="muted">Sada: {{ window }}</p>
+        </div>
+        <div class="row gap-16 line-row" style="align-items: flex-end">
+          <div class="stack gap-8" style="flex: 1 1 200px">
+            <label class="field" for="range_start">Od</label>
+            <input id="range_start" name="range_start" type="date" value="{{ client.range_start }}">
+          </div>
+          <div class="stack gap-8" style="flex: 1 1 200px">
+            <label class="field" for="range_end">Do</label>
+            <input id="range_end" name="range_end" type="date" value="{{ client.range_end }}">
+          </div>
+        </div>
+        <p class="muted small">Klijent unutar ovog perioda sam bira šta gleda: ceo period, poslednjih 30 ili 7 dana, jedan dan ili bilo koji raspon. Ako ostavite „do“ prazno, period ide do juče i sam se produžava. Ako ostavite oba prazna, klijent vidi poslednjih 90 dana. Period može da traje najviše {{ max_days }} dana.</p>
+      </section>
+
+      <section class="card stack gap-8">
+        <div class="stack gap-4">
+          <h2>Šta klijent vidi</h2>
+          <p class="muted">Važi za izveštaje svih kanala oglašavanja. Isključeno se ne prikazuje klijentu.</p>
+        </div>
+        {% for key, label, hint in visibility %}
+        <label class="check">
+          <input type="checkbox" name="{{ key }}" value="1" {% if client[key] %}checked{% endif %}>
+          <span><strong>{{ label }}</strong><span class="muted small">{{ hint }}</span></span>
+        </label>
+        {% endfor %}
+
+        <div class="stack gap-8 line-row" style="margin-top: 8px">
+          <label class="field" for="conv_kind">Kako zovemo konverzije kod ovog klijenta</label>
+          <select id="conv_kind" name="conv_kind" aria-describedby="conv-pomoc">
+            {% for value, kind in conv_kinds.items() %}
+            <option value="{{ value }}" {% if client.conv_kind == value %}selected{% endif %}>{{ kind.option }}</option>
+            {% endfor %}
+          </select>
+          <p id="conv-pomoc" class="muted small">Kod Meta Ads-a ovaj izbor određuje i šta se broji: leadovi ili kupovine. Ostali kanali prikazuju svoj broj konverzija.</p>
+        </div>
+        <div class="stack gap-8" style="margin-top: 8px">
+          <label class="field" for="name">Ime klijenta u izveštaju</label>
+          <input id="name" name="name" type="text" value="{{ client.name }}" maxlength="120" required>
+        </div>
+      </section>
+
+      <div><button class="btn primary" type="submit">Sačuvaj izmene</button></div>
+    </form>
+
+    <section class="card stack gap-12">
+      <h2>Podaci i uklanjanje</h2>
+      <div class="row gap-12">
+        <form method="post" action="{{ url_for('client_refresh', client_id=client.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn" type="submit">Osveži podatke</button>
+        </form>
+        <form method="post" action="{{ url_for('client_remove', client_id=client.id) }}" onsubmit="return confirm('Ukloniti klijenta sa portala? Njegov link i lozinka prestaju da rade.')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn danger" type="submit">Ukloni sa portala</button>
+        </form>
+      </div>
+      <p class="muted small">Uklanjanje briše samo link, lozinku i podešavanja na portalu. U nalozima na platformama se ništa ne menja.</p>
+    </section>
+  </div>
+
+  <aside class="side card accent stack gap-24">
+    <div class="row between gap-12">
+      <h2>Pristup za klijenta</h2>
+      {% if status == 'active' %}<span class="pill ok">Aktivan</span>
+      {% elif status == 'off' %}<span class="pill off">Isključen</span>
+      {% else %}<span class="pill warn">Nije napravljen</span>{% endif %}
+    </div>
+
+    <div class="stack gap-8">
+      <strong>Link</strong>
+      <div class="secret" id="link">{{ link }}</div>
+      <div><button class="btn" type="button" id="copy-link" data-done="Link je kopiran">Kopiraj link</button></div>
+    </div>
+
+    <div class="stack gap-8">
+      <strong>Lozinka</strong>
+      {% if new_password %}
+      <div class="secret big">{{ new_password }}</div>
+      <p class="notice small">Zapišite je sada. Lozinka se prikazuje samo jednom i ne čuva se u čitljivom obliku.</p>
+      {% elif status == 'none' %}
+      <p class="muted small">Klijent ne može da uđe dok ne napravite lozinku.</p>
+      {% else %}
+      <p class="muted small">Lozinka je postavljena. Ne može ponovo da se prikaže, ali možete da napravite novu.</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('client_new_password', client_id=client.id) }}">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button class="btn" type="submit">Napravi novu lozinku</button>
+      </form>
+      <p class="muted small">Nova lozinka poništava staru i odjavljuje sve koji su već ušli. Pošaljite link i lozinku odvojeno, na primer link mejlom, a lozinku porukom.</p>
+    </div>
+
+    {% if status != 'none' %}
+    <form class="stack gap-8 line-row" method="post" action="{{ url_for('client_toggle_link', client_id=client.id) }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      {% if client.link_active %}
+      <p class="muted small">Link radi. Ako ga isključite, klijent neće moći da otvori izveštaj.</p>
+      <div><button class="btn" type="submit">Isključi link</button></div>
+      {% else %}
+      <p class="notice small">Link je isključen. Klijent ne može da otvori izveštaj dok ga ponovo ne uključite.</p>
+      <div><button class="btn" type="submit">Uključi link</button></div>
+      {% endif %}
+    </form>
+    {% endif %}
+
+    <a class="btn primary" href="{{ url_for('client_preview', client_id=client.id) }}">Pogledaj kao klijent</a>
+  </aside>
+</div>
+
+<script>
+  (function () {
+    var button = document.getElementById('copy-link');
+    var link = document.getElementById('link').textContent.trim();
+    button.addEventListener('click', function () {
+      var done = function () { button.textContent = button.dataset.done; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(done, function () { window.prompt('Kopirajte link:', link); });
+      } else {
+        window.prompt('Kopirajte link:', link);
+      }
+    });
+  })();
+</script>
+{% endblock %}

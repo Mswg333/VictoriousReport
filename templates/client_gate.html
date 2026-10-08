@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Rezultati vaših kampanja{% endblock %}
+{% block body %}
+<header class="topbar">
+  <div class="topbar-inner"><img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious"></div>
+</header>
+<main class="gate">
+  {% if unavailable and no_data %}
+  <div class="gate-box stack gap-16">
+    <h1>Podaci trenutno nisu dostupni</h1>
+    <p class="muted">Pokušajte ponovo malo kasnije. Ako se ovo ponavlja, javite se svom kontaktu u agenciji Victorious.</p>
+  </div>
+  {% elif unavailable %}
+  <div class="gate-box stack gap-16">
+    <h1>Izveštaj trenutno nije dostupan</h1>
+    <p class="muted">Javite se svom kontaktu u agenciji Victorious da vam ponovo omogući pristup.</p>
+  </div>
+  {% else %}
+  <form class="gate-box stack gap-24" method="post">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="stack gap-8">
+      <h1>Rezultati vaših kampanja</h1>
+      <p class="muted" style="font-size: 18px">Izveštaj za {{ client.name }}</p>
+    </div>
+    <div class="stack gap-8">
+      <label class="field" for="lozinka">Lozinka</label>
+      <input id="lozinka" name="lozinka" type="password" autocomplete="current-password" required autofocus>
+      {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    </div>
+    <button class="btn primary" type="submit">Otvori izveštaj</button>
+    <p class="muted small footer">Lozinku ste dobili od agencije Victorious. Ako je nemate ili ne radi, javite se svom kontaktu u agenciji.</p>
+  </form>
+  {% endif %}
+</main>
+{% endblock %}

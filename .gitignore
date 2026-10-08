@@ -1,0 +1,12 @@
+.env
+.secret_key
+*.pem
+client_secret_*.json
+victorious-portal-*.json
+portal.db
+portal.db.*
+__pycache__/
+*.pyc
+.venv/
+.env.*
+!.env.example

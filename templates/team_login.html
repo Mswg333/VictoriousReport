@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Prijava za tim{% endblock %}
+{% block body %}
+<header class="topbar">
+  <div class="topbar-inner"><img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious"></div>
+</header>
+<main class="gate">
+  <div class="gate-box stack gap-24">
+    <div class="stack gap-8">
+      <h1>Prijava za tim</h1>
+      <p class="muted">Prijavite se Google nalogom sa domena {{ domain }}. Klijenti ulaze preko svog linka.</p>
+    </div>
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+    <p class="flash{% if category == 'error' %} error{% endif %}" role="alert">{{ message }}</p>
+    {% endfor %}
+    {% if google_ready %}
+    <form method="post" action="{{ url_for('google_start') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="svrha" value="login">
+      <button class="btn primary wide google-btn" type="submit">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+        Prijavi se preko Google-a
+      </button>
+    </form>
+    {% else %}
+    <div class="notice stack gap-8">
+      <strong>Google prijava još nije podešena.</strong>
+      <span>Upišite <code>GOOGLE_CLIENT_ID</code> i <code>GOOGLE_CLIENT_SECRET</code> u podešavanja aplikacije, pa je pokrenite ponovo. U Google Cloud konzoli, kao Authorized redirect URI, upišite:</span>
+      <code>{{ callback }}</code>
+    </div>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}
