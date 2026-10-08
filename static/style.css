@@ -167,6 +167,20 @@ td.name .small { white-space: nowrap; }
 .problem { color: var(--raspberry); }
 details summary { cursor: pointer; font-weight: 600; color: var(--purple-dark); min-height: 32px; }
 
+/* izbor brojki po kanalu (podesavanja klijenta) */
+.picker { border: 1px solid var(--line-soft); border-radius: 10px; background: var(--ground); }
+.picker summary {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px;
+  min-height: 44px; padding: 8px 14px;
+}
+.picker[open] summary { border-bottom: 1px solid var(--line-soft); }
+.picker > fieldset, .picker > div { margin: 0; padding: 12px 14px 4px; border: 0; }
+.picker > div { padding-bottom: 14px; }
+.picker legend { padding: 0; margin-bottom: 4px; font-weight: 600; font-size: 14px; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 16px; }
+.pick { display: flex; align-items: center; gap: 10px; min-height: 40px; cursor: pointer; }
+.pick input { width: 18px; height: 18px; margin: 0; accent-color: var(--purple); flex: none; }
+
 /* izbor perioda u izvestaju */
 .range-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 12px auto 0; }
 .range-field { display: flex; flex-direction: column; gap: 4px; }

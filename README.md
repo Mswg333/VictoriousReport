@@ -20,6 +20,24 @@ poruku timu (klijent je ne vidi).
 
 Kanali su nezavisni, pa ih vredi uključivati jedan po jedan, počev od Google-a.
 
+## Šta klijent vidi u izveštaju
+
+U podešavanjima klijenta svaki kanal ima svoj izbor „Šta klijent vidi u
+izveštaju …“. Isto važi za zbirni izveštaj i za izveštaj o sajtu.
+
+- **Kanali oglašavanja i zbirni izveštaj:** potrošeno, prikazi, klikovi, CTR,
+  cena po kliku, cena za 1.000 prikaza, konverzije, stopa konverzije i cena po
+  konverziji. Od delova izveštaja tu su grafikon po danima, tabela kampanja i,
+  samo za Google Ads, pojmovi pretrage. Grafikon može da prikazuje klikove,
+  prikaze, potrošnju ili konverzije.
+- **Sajt (Analytics):** posete, posetioci, novi posetioci, prosečno trajanje
+  posete, stopa angažovanja, pregledi strana i konverzije iz Analytics-a
+  (ključni događaji). Od delova izveštaja tu su grafikon, izvori poseta i
+  najgledanije strane.
+
+Izbor se čuva po klijentu (kolona `layout`). Klijenti koji još nisu podešavani
+vide isto što i ranije.
+
 ## Period koji klijent vidi
 
 U podešavanjima klijenta tim bira period „od–do“, na primer od 01.01. do 31.01.

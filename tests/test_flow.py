@@ -154,7 +154,9 @@ for expected in ("Nameštaj Hrast (111-204-5501, EUR)", "Klinika Vita (222-318-7
 assert "Stari nalog" not in resp.text  # neaktivan Microsoft nalog se ne nudi
 SETTINGS = {
     "_csrf": token, "name": "Nameštaj Hrast d.o.o.", "conv_kind": "upit",
-    "show_spend": "1", "show_clicks": "1", "show_conv": "1", "show_campaigns": "1", "show_terms": "1", "show_combined": "1",
+    "show_combined": "1",
+    "lay_google_ads": "1", "m_google_ads": ["spend", "impressions", "clicks", "cpc", "conversions", "cpa"],
+    "s_google_ads": ["chart", "campaigns", "terms"], "chart_google_ads": "clicks",
     "src_google_ads": "1112045501", "vis_google_ads": "1", "src_meta": "9001", "vis_meta": "1",
     "src_microsoft": "777:8001", "vis_microsoft": "1", "src_tiktok": "7001", "vis_tiktok": "1",
     "src_ga4": "555000111", "vis_ga4": "1",
@@ -254,9 +256,51 @@ assert hero(page) == "U poslednjih 30 dana oglasi na svim kanalima su vam doneli
 assert "TikTok Ads" in text(team.get("/tim").text), "tim i dalje vidi sakriven kanal"
 team.post("/tim/klijent/1", data={k: v for k, v in hidden.items() if k != "show_combined"})
 assert hero(visitor.get(path).text).startswith("U poslednjih 30 dana Google Ads oglasi")
-team.post("/tim/klijent/1", data={k: v for k, v in SETTINGS.items() if k not in ("show_spend", "show_conv")})
+team.post("/tim/klijent/1", data={**SETTINGS, "lay_meta": "1", "m_meta": ["impressions", "clicks"], "s_meta": ["campaigns"]})
 plain = text(visitor.get(f"{path}?kanal=meta").text)
 assert "doneli 600 klikova ka sajtu" in plain and "€" not in plain and "Upiti" not in plain
+assert "Prikazi" in plain and "Klikovi po danima" not in plain
+
+# 12c. Izbor brojki po kanalu: svaki kanal ima svoj izbor, nezavisno od ostalih.
+team.post("/tim/klijent/1", data={
+    **SETTINGS,
+    "lay_meta": "1", "m_meta": ["ctr", "cpm", "conv_rate", "nepoznato"], "s_meta": ["chart"], "chart_meta": "spend",
+    "lay_ga4": "1", "m_ga4": ["users", "new_users", "engagement", "page_views", "key_events"], "s_ga4": ["chart", "pages"],
+    "chart_ga4": "key_events",
+    "lay_ukupno": "1", "m_ukupno": ["impressions"], "s_ukupno": ["chart"], "chart_ukupno": "spend",
+})
+settings_page = team.get("/tim/klijent/1").text
+assert "Šta klijent vidi u izveštaju Meta Ads" in settings_page and "4 od 11 uključeno" in text(settings_page)
+meta = visitor.get(f"{path}?kanal=meta").text
+plain = text(meta)
+assert hero(meta) == "U poslednjih 30 dana Meta Ads oglasi su bili aktivni.", hero(meta)
+for expected in ("Prikaza koji su doneli klik (CTR)", "Cena za 1.000 prikaza", "Klikova koji su doneli upit", "Potrošnja po danima"):
+    assert expected in plain, expected
+assert "Rezultati po kampanjama" not in plain and "Potrošeno na oglase" not in plain
+google_page = text(visitor.get(f"{path}?kanal=google_ads").text)
+assert "Potrošeno na oglase" in google_page and "Rezultati po kampanjama" in google_page, "Google ima svoj izbor"
+site = visitor.get(f"{path}?kanal=ga4").text
+plain = text(site)
+assert hero(site) == "U poslednjih 30 dana vaš sajt je posetilo 900 posetilaca.", hero(site)
+for expected in ("600", "Novih posetilaca", "62,5 %", "2.100", "Konverzije po danima", "Najgledanije strane"):
+    assert expected in plain, expected
+assert "Odakle dolaze posete" not in plain and "Prosečno trajanje" not in plain
+combined = visitor.get(path).text
+plain = text(combined)
+assert hero(combined).startswith("U poslednjih 30 dana oglasi na svim kanalima su prikazani"), hero(combined)
+assert "Potrošnja po danima" not in plain and "Rezultati po kanalima" not in plain
+assert "različitim valutama" in text(team.get("/tim/klijent/1/pregled").text)
+# Kanal cija polja nisu poslata zadrzava svoj izbor.
+team.post("/tim/klijent/1", data=SETTINGS)
+assert "Konverzije po danima" in text(visitor.get(f"{path}?kanal=ga4").text)
+# Povratak na podrazumevano za dalje provere.
+DEFAULT_ADS = {"m": ["spend", "impressions", "clicks", "cpc", "conversions", "cpa"], "s": ["chart", "campaigns"]}
+team.post("/tim/klijent/1", data={
+    **SETTINGS,
+    **{f"lay_{k}": "1" for k in ("meta", "ukupno", "ga4")},
+    **{f"m_{k}": DEFAULT_ADS["m"] for k in ("meta", "ukupno")}, **{f"s_{k}": DEFAULT_ADS["s"] for k in ("meta", "ukupno")},
+    "m_ga4": ["sessions", "users", "avg_time"], "s_ga4": ["chart", "channels", "pages"], "chart_ga4": "sessions",
+})
 team.post("/tim/klijent/1", data=SETTINGS)
 
 # 12b. Period koji odredjuje tim; klijent bira bilo koji raspon unutar njega.

@@ -212,8 +212,9 @@ class FakeNet:
             200,
             {
                 "reports": [
-                    {"rows": [{"metricValues": [{"value": str(41 * days)}, {"value": str(30 * days)}, {"value": "134.6"}]}]},
-                    {"rows": [row(day.replace("-", ""), 41) for day in days_between(start, end)]},
+                    {"rows": [{"metricValues": [{"value": str(v)} for v in (
+                        41 * days, 30 * days, "134.6", 20 * days, "0.625", 70 * days, 2 * days)]}]},
+                    {"rows": [row(day.replace("-", ""), 41, 30, 2) for day in days_between(start, end)]},
                     {"rows": [row("Paid Search", 500), row("Organic Search", 400), row("Nepoznat kanal", 1)]},
                     {"rows": [row("/", 300), row("/kontakt", 45)]},
                 ]

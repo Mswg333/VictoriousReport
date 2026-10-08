@@ -31,6 +31,7 @@ from werkzeug.security import check_password_hash, generate_password_hash  # noq
 import connections  # noqa: E402
 import db  # noqa: E402
 import fmt  # noqa: E402
+import layout  # noqa: E402
 import google_auth  # noqa: E402
 import migrate  # noqa: E402
 import platforms  # noqa: E402
@@ -565,14 +566,18 @@ def get_client_or_404(client_id):
     return client
 
 
-VISIBILITY = [
-    ("show_spend", "Potrošnja i cena po rezultatu", "Koliko je potrošeno i koliko košta jedan upit ili kupovina."),
-    ("show_clicks", "Prikazi i klikovi", "Koliko puta je oglas prikazan i kliknut."),
-    ("show_conv", "Upiti ili kupovine (konverzije)", "Broj rezultata koje su oglasi doneli."),
-    ("show_campaigns", "Tabela kampanja", "Rezultati razdvojeni po kampanjama, u izveštaju svakog kanala."),
-    ("show_terms", "Pojmovi pretrage", "Šta su ljudi kucali pre klika (Google Ads). Obično ostaje samo za tim."),
-    ("show_combined", "Zbirni izveštaj", "Jedan izveštaj preko svih kanala oglašavanja. Prikazuje se kad klijent ima bar dva kanala."),
-]
+def layout_choices(client, key, has_terms=False):
+    """Sta tim moze da izabere za jedan izvestaj, sa trenutnim izborom."""
+    metrics, sections, charts = layout.options(key, has_terms)
+    current = layout.get(client, key)
+    return {
+        "key": key,
+        "metrics": [{"value": m, "label": label, "on": m in current["m"]} for m, label in metrics],
+        "sections": [{"value": v, "label": label, "on": v in current["s"]} for v, label in sections],
+        "charts": [{"value": c, "label": label, "on": c == current["chart"]} for c, label in charts],
+        "count": len(current["m"]) + len(current["s"]),
+        "total": len(metrics) + len(sections),
+    }
 
 
 def set_source(client_id, platform, account_id, name, currency, visible):
@@ -623,15 +628,20 @@ def save_channels(client_id, form):
 def client_settings(client_id):
     client = get_client_or_404(client_id)
     if request.method == "POST":
-        flags = [1 if request.form.get(key) else 0 for key, _, _ in VISIBILITY]
         conv_kind = request.form.get("conv_kind", "upit")
         if conv_kind not in fmt.CONV_KINDS:
             conv_kind = "upit"
         name = request.form.get("name", "").strip()[:120] or client["name"]
+        keys = [mod.KEY for mod in platforms.ADS] + [layout.COMBINED, layout.SITE]
         db.execute(
-            "UPDATE portal_clients SET name = ?, show_spend = ?, show_clicks = ?, show_conv = ?, "
-            "show_campaigns = ?, show_terms = ?, show_combined = ?, conv_kind = ? WHERE id = ?",
-            (name, *flags, conv_kind, client_id),
+            "UPDATE portal_clients SET name = ?, show_combined = ?, conv_kind = ?, layout = ? WHERE id = ?",
+            (
+                name,
+                1 if request.form.get("show_combined") else 0,
+                conv_kind,
+                layout.from_form(client, request.form, keys),
+                client_id,
+            ),
         )
         problems = save_channels(client_id, request.form)
         range_problem = save_range(client_id, request.form)
@@ -652,6 +662,7 @@ def client_settings(client_id):
             "source": sources.get(mod.KEY),
             "accounts": None,
             "error": None,
+            "layout": layout_choices(client, mod.KEY, getattr(mod, "HAS_SEARCH_TERMS", False)),
         }
         if channel["connected"]:
             try:
@@ -675,7 +686,8 @@ def client_settings(client_id):
     return render_template(
         "client_settings.html",
         client=client,
-        visibility=VISIBILITY,
+        combined_layout=layout_choices(client, layout.COMBINED),
+        site_layout=layout_choices(client, layout.SITE),
         conv_kinds=fmt.CONV_KINDS,
         status=link_status(client),
         link=url_for("client_report", token=client["token"], _external=True),

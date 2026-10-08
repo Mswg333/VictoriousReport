@@ -6,12 +6,19 @@ CURRENCY_SIGNS = {"EUR": "€", "USD": "$", "GBP": "£", "CHF": "CHF", "RSD": "R
 CLICK_FORMS = ("klik", "klika", "klikova")
 VISIT_FORMS = ("poseta", "posete", "poseta")        # 21 poseta
 VISIT_FORMS_OBJECT = ("posetu", "posete", "poseta")  # sajt je imao 21 posetu
+IMPRESSION_FORMS = ("prikaz", "prikaza", "prikaza")
+TIMES_FORMS = ("put", "puta", "puta")
+USER_FORMS = ("posetilac", "posetioca", "posetilaca")
+KEY_EVENT_FORMS = ("konverzija", "konverzije", "konverzija")
+KEY_EVENT_FORMS_OBJECT = ("konverziju", "konverzije", "konverzija")
 
 # Kako se konverzije zovu u izvestaju klijenta.
 CONV_KINDS = {
     "upit": {
         "forms": ("upit", "upita", "upita"),
+        "forms_nom": ("upit", "upita", "upita"),
         "column": "Upiti",
+        "rate": "Klikova koji su doneli upit",
         "per": "po upitu",
         "cost": "Cena po upitu",
         "none": "nema upita",
@@ -19,7 +26,9 @@ CONV_KINDS = {
     },
     "kupovina": {
         "forms": ("kupovinu", "kupovine", "kupovina"),
+        "forms_nom": ("kupovina", "kupovine", "kupovina"),
         "column": "Kupovine",
+        "rate": "Klikova koji su doneli kupovinu",
         "per": "po kupovini",
         "cost": "Cena po kupovini",
         "none": "nema kupovina",
@@ -67,6 +76,11 @@ def money_sum(by_currency, decimals=0):
     """{"EUR": 900, "RSD": 500} -> "900 € i 500 RSD". Valute se nikad ne sabiraju."""
     parts = [money(amount, currency, decimals) for currency, amount in sorted(by_currency.items())]
     return " i ".join(parts)
+
+
+def percent(share, decimals=1):
+    """0.0345 -> 3,5 %"""
+    return f"{num(share * 100, decimals)} %"
 
 
 def duration(seconds):

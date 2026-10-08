@@ -1,6 +1,35 @@
 {% extends "team_base.html" %}
 {% block title %}{{ client.name }}{% endblock %}
 {% block content %}
+{% macro picker(lay, title) %}
+<details class="picker">
+  <summary><span>{{ title }}</span><span class="muted small">{{ lay.count }} od {{ lay.total }} uključeno</span></summary>
+  <input type="hidden" name="lay_{{ lay.key }}" value="1">
+  <fieldset class="stack gap-8">
+    <legend class="field">Brojke</legend>
+    <div class="pick-grid">
+      {% for m in lay.metrics %}
+      <label class="pick"><input type="checkbox" name="m_{{ lay.key }}" value="{{ m.value }}" {% if m.on %}checked{% endif %}><span>{{ m.label }}</span></label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  <fieldset class="stack gap-8">
+    <legend class="field">Delovi izveštaja</legend>
+    <div class="pick-grid">
+      {% for v in lay.sections %}
+      <label class="pick"><input type="checkbox" name="s_{{ lay.key }}" value="{{ v.value }}" {% if v.on %}checked{% endif %}><span>{{ v.label }}</span></label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  <div class="stack gap-8">
+    <label class="field" for="chart_{{ lay.key }}">Grafikon prikazuje</label>
+    <select id="chart_{{ lay.key }}" name="chart_{{ lay.key }}">
+      {% for c in lay.charts %}<option value="{{ c.value }}" {% if c.on %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+    </select>
+  </div>
+</details>
+{% endmacro %}
+
 <div class="stack gap-4">
   <a href="{{ url_for('clients') }}" style="font-weight: 600; align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center">Svi klijenti</a>
   <h1>{{ client.name }}</h1>
@@ -46,6 +75,7 @@
             <input type="checkbox" name="vis_{{ ch.key }}" value="1" {% if not ch.source or ch.source.visible %}checked{% endif %}>
             <span><strong>Prikaži klijentu izveštaj za {{ ch.name }}</strong></span>
           </label>
+          {{ picker(ch.layout, "Šta klijent vidi u izveštaju " ~ ch.name) }}
           {% endif %}
         </div>
         {% endfor %}
@@ -80,6 +110,7 @@
             <input type="checkbox" name="vis_ga4" value="1" {% if not site or site.visible %}checked{% endif %}>
             <span><strong>Prikaži klijentu izveštaj o posetama sajtu</strong></span>
           </label>
+          {{ picker(site_layout, "Šta klijent vidi u izveštaju o sajtu") }}
           {% endif %}
         </div>
       </section>
@@ -104,17 +135,19 @@
 
       <section class="card stack gap-8">
         <div class="stack gap-4">
-          <h2>Šta klijent vidi</h2>
-          <p class="muted">Važi za izveštaje svih kanala oglašavanja. Isključeno se ne prikazuje klijentu.</p>
+          <h2>Zbirni izveštaj</h2>
+          <p class="muted">Jedan izveštaj preko svih kanala oglašavanja. Prikazuje se kad klijent ima bar dva kanala.</p>
         </div>
-        {% for key, label, hint in visibility %}
         <label class="check">
-          <input type="checkbox" name="{{ key }}" value="1" {% if client[key] %}checked{% endif %}>
-          <span><strong>{{ label }}</strong><span class="muted small">{{ hint }}</span></span>
+          <input type="checkbox" name="show_combined" value="1" {% if client.show_combined %}checked{% endif %}>
+          <span><strong>Prikaži klijentu zbirni izveštaj</strong></span>
         </label>
-        {% endfor %}
+        {{ picker(combined_layout, "Šta klijent vidi u zbirnom izveštaju") }}
+      </section>
 
-        <div class="stack gap-8 line-row" style="margin-top: 8px">
+      <section class="card stack gap-8">
+        <h2>Naziv i konverzije</h2>
+        <div class="stack gap-8 line-row">
           <label class="field" for="conv_kind">Kako zovemo konverzije kod ovog klijenta</label>
           <select id="conv_kind" name="conv_kind" aria-describedby="conv-pomoc">
             {% for value, kind in conv_kinds.items() %}

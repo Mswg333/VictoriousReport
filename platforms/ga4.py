@@ -75,13 +75,17 @@ def report(property_id, start, end):
                             {"name": "sessions"},
                             {"name": "totalUsers"},
                             {"name": "averageSessionDuration"},
+                            {"name": "newUsers"},
+                            {"name": "engagementRate"},
+                            {"name": "screenPageViews"},
+                            {"name": "keyEvents"},
                         ],
                     },
                     {
                         "dateRanges": date_range,
                         "dimensions": [{"name": "date"}],
-                        "metrics": [{"name": "sessions"}],
-                        "limit": 100,
+                        "metrics": [{"name": "sessions"}, {"name": "totalUsers"}, {"name": "keyEvents"}],
+                        "limit": 400,
                     },
                     {
                         "dateRanges": date_range,
@@ -118,13 +122,22 @@ def report(property_id, start, end):
             "sessions": int(number(totals, 0)),
             "users": int(number(totals, 1)),
             "avg_seconds": round(number(totals, 2)),
+            "new_users": int(number(totals, 3)),
+            "engagement": number(totals, 4),  # udeo od 0 do 1
+            "page_views": int(number(totals, 5)),
+            "key_events": number(totals, 6),
             # GA4 vraca datum kao 20261006
-            "by_day": {label(r): int(number(r)) for r in rows(1) if len(label(r)) == 8},
+            "by_day": {
+                label(r): {"sessions": int(number(r, 0)), "users": int(number(r, 1)), "key_events": number(r, 2)}
+                for r in rows(1)
+                if len(label(r)) == 8
+            },
             "channels": [{"name": label(r), "sessions": int(number(r))} for r in rows(2)],
             "pages": [{"path": label(r), "views": int(number(r))} for r in rows(3)],
         }
 
-    return cached(f"ga4:{property_id}:{start.isoformat()}:{end.isoformat()}", data_ttl(end), fetch)
+    # "v2" u kljucu: zapamceni odgovori starijeg oblika (bez novih brojki) se ne koriste.
+    return cached(f"ga4:{property_id}:v2:{start.isoformat()}:{end.isoformat()}", data_ttl(end), fetch)
 
 
 def list_properties():

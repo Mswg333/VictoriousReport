@@ -43,6 +43,7 @@ SCHEMA = [
         conv_kind TEXT NOT NULL DEFAULT 'upit',
         range_start TEXT NOT NULL DEFAULT '',
         range_end TEXT NOT NULL DEFAULT '',
+        layout TEXT NOT NULL DEFAULT '',
         failed_attempts INTEGER NOT NULL DEFAULT 0,
         locked_until INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
@@ -183,7 +184,7 @@ def init_schema():
     conn.commit()
     # Kolone dodate posle prvih verzija.
     existing = columns("portal_clients")
-    for column in ("range_start", "range_end"):
+    for column in ("range_start", "range_end", "layout"):
         if column not in existing:
             cur.execute(f"ALTER TABLE portal_clients ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
     conn.commit()

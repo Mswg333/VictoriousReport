@@ -147,7 +147,10 @@ def summarize(payload, start, end, conv_kind):
     """Iz dnevnih redova racuna zbir, kampanje i niz po danima za period od start do end."""
     days = (end - start).days + 1
     totals = {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0}
-    per_day = {start + timedelta(days=i): 0 for i in range(days)}
+    per_day = {
+        start + timedelta(days=i): {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0}
+        for i in range(days)
+    }
     campaigns = {}
     for day_text, campaign_id, name, spend, impressions, clicks, conversions in payload["rows"]:
         day = date.fromisoformat(day_text)
@@ -159,12 +162,11 @@ def summarize(payload, start, end, conv_kind):
             campaign_id,
             {"name": name, "spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0},
         )
-        for target in (c, totals):
+        for target in (c, totals, per_day[day]):
             target["spend"] += spend
             target["impressions"] += impressions
             target["clicks"] += clicks
             target["conversions"] += conversions
-        per_day[day] += clicks
     for target in [totals, *campaigns.values()]:
         target["spend"] = round(target["spend"], 2)
         target["conversions"] = round(target["conversions"], 2)
@@ -173,7 +175,8 @@ def summarize(payload, start, end, conv_kind):
         "end": end,
         "totals": totals,
         "campaigns": sorted(campaigns.values(), key=lambda c: c["spend"], reverse=True),
-        "series": [{"date": day, "value": value} for day, value in per_day.items()],
+        # Dan po dan, sa svim brojkama: [{"date", "spend", "impressions", "clicks", "conversions"}]
+        "daily": [{"date": day, **values} for day, values in per_day.items()],
     }
 
 
