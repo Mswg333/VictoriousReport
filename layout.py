@@ -34,10 +34,23 @@ ADS_METRICS = [
 # Doseg i frekvencija postoje samo kod Mete, pojmovi pretrage samo kod Google-a.
 REACH_KEYS = {"meta"}
 TERMS_KEYS = {"google_ads"}
+
+# Meta ima i kolone kao u Ads Manager-u. (brojka, oznaka, iza koje brojke ide)
+META_EXTRA = [
+    ("budget", "Budžet kampanje (trenutni, u tabeli)", "spend"),
+    ("results", "Rezultati (prema cilju kampanje)", "frequency"),
+    ("cost_per_result", "Cena po rezultatu", "results"),
+    ("clicks_all", "Svi klikovi", "clicks"),
+    ("cpc_all", "Cena po kliku (svi klikovi)", "cpc"),
+    ("landing_views", "Pregledi odredišne strane", "cpm"),
+    ("cost_per_landing", "Cena po pregledu odredišne strane", "landing_views"),
+]
+META_LABELS = {"clicks": "Klikovi na link", "cpc": "Cena po kliku na link"}
 ADS_SECTIONS = [
     ("chart", "Grafikon po danima"),
     ("campaigns", "Tabela kampanja"),
     ("terms", "Pojmovi pretrage"),
+    ("rankings", "Ocene oglasa (kvalitet, angažovanje, konverzije)"),
 ]
 ADS_CHART = [
     ("clicks", "Klikovi"),
@@ -73,7 +86,15 @@ def options(key):
     metrics = ADS_METRICS if key in REACH_KEYS else [m for m in ADS_METRICS if m[0] not in ("reach", "frequency")]
     if key == COMBINED:
         return metrics, COMBINED_SECTIONS, ADS_CHART
-    sections = ADS_SECTIONS if key in TERMS_KEYS else [s for s in ADS_SECTIONS if s[0] != "terms"]
+    if key == "meta":
+        metrics = [(m, META_LABELS.get(m, label)) for m, label in metrics]
+        for extra, label, after in META_EXTRA:
+            position = [m for m, _ in metrics].index(after) + 1
+            metrics.insert(position, (extra, label))
+    sections = [
+        s for s in ADS_SECTIONS
+        if (s[0] != "terms" or key in TERMS_KEYS) and (s[0] != "rankings" or key == "meta")
+    ]
     return metrics, sections, ADS_CHART
 
 

@@ -94,10 +94,68 @@ def _action(actions, *types):
 
 
 PURCHASE_TYPES = ("omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase")
+LEAD_TYPES = ("lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead")
+LINK_CLICK = "link_click"  # rezultat se racuna iz inline_link_clicks
+
+# "Rezultat" kao u Ads Manager-u: zavisi od cilja kampanje.
+# cilj kampanje -> (vrsta rezultata, vrste akcija koje se broje)
+RESULTS = {
+    "leads": (("OUTCOME_LEADS", "LEAD_GENERATION"), LEAD_TYPES),
+    "purchases": (("OUTCOME_SALES", "CONVERSIONS", "PRODUCT_CATALOG_SALES"), PURCHASE_TYPES),
+    "link_clicks": (("OUTCOME_TRAFFIC", "LINK_CLICKS"), (LINK_CLICK,)),
+    "engagement": (("OUTCOME_ENGAGEMENT", "POST_ENGAGEMENT", "PAGE_LIKES", "EVENT_RESPONSES"), ("post_engagement",)),
+    "messages": (("MESSAGES",), ("onsite_conversion.messaging_conversation_started_7d",)),
+    "app_installs": (("OUTCOME_APP_PROMOTION", "APP_INSTALLS"), ("mobile_app_install", "omni_app_install")),
+    "video_views": (("VIDEO_VIEWS",), ("video_view",)),
+}
+# Kako se rezultat zove u izvestaju (1, 2-4, 5+).
+RESULT_FORMS = {
+    "leads": ("upit", "upita", "upita"),
+    "purchases": ("kupovina", "kupovine", "kupovina"),
+    "link_clicks": ("klik na link", "klika na link", "klikova na link"),
+    "engagement": ("interakcija", "interakcije", "interakcija"),
+    "messages": ("započet razgovor", "započeta razgovora", "započetih razgovora"),
+    "app_installs": ("instalacija", "instalacije", "instalacija"),
+    "video_views": ("pregled videa", "pregleda videa", "pregleda videa"),
+}
+
+
+def result_kind(objective):
+    """Vrsta rezultata za cilj kampanje, ili None (npr. svest o brendu, gde je rezultat doseg)."""
+    for kind, (objectives, _) in RESULTS.items():
+        if objective in objectives:
+            return kind
+    return None
+
+
+def _budget(value):
+    """Meta salje budzet u najmanjoj jedinici valute (centi)."""
+    try:
+        return float(value) / 100 if value not in (None, "", "0") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_campaigns(token, account_id):
+    """Cilj i trenutni budzet svake kampanje: {id: {"result", "daily", "lifetime"}}."""
+    rows = _paged(
+        f"{BASE}/act_{format_id(account_id)}/campaigns",
+        token,
+        {"fields": "id,objective,daily_budget,lifetime_budget", "limit": 500},
+    )
+    return {
+        str(row.get("id", "")): {
+            "result": result_kind(row.get("objective")),
+            "daily": _budget(row.get("daily_budget")),
+            "lifetime": _budget(row.get("lifetime_budget")),
+        }
+        for row in rows
+    }
 
 
 def fetch_daily(token, account_id, start, end):
     """Brojke po kampanji i danu. Klikovi su klikovi na link (ne svi klikovi na objavu)."""
+    campaigns = fetch_campaigns(token, account_id)
     rows = _paged(
         f"{BASE}/act_{format_id(account_id)}/insights",
         token,
@@ -105,7 +163,7 @@ def fetch_daily(token, account_id, start, end):
             "level": "campaign",
             "time_increment": 1,
             "time_range": json.dumps({"since": start.isoformat(), "until": end.isoformat()}),
-            "fields": "campaign_id,campaign_name,spend,impressions,inline_link_clicks,actions,action_values",
+            "fields": "campaign_id,campaign_name,spend,impressions,inline_link_clicks,clicks,actions,action_values",
             "limit": 500,
         },
     )
@@ -115,25 +173,76 @@ def fetch_daily(token, account_id, start, end):
         if not day:
             continue
         actions = row.get("actions") or []
+        campaign_id = str(row.get("campaign_id", ""))
+        link_clicks = int(float(row.get("inline_link_clicks") or 0))
+        kind = campaigns.get(campaign_id, {}).get("result")
+        if kind == "link_clicks":
+            results = float(link_clicks)
+        elif kind:
+            results = _action(actions, *RESULTS[kind][1])
+        else:
+            results = 0.0
         out.append(
             [
                 day,
-                str(row.get("campaign_id", "")),
+                campaign_id,
                 row.get("campaign_name", ""),
                 float(row.get("spend") or 0),
                 int(float(row.get("impressions") or 0)),
-                int(float(row.get("inline_link_clicks") or 0)),
+                link_clicks,
                 # Meta nema jedan broj "konverzija": cuvamo i upite i kupovine,
                 # a izvestaj bira prema podesavanju klijenta.
                 {
-                    "upit": _action(actions, "lead", "onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead"),
+                    "upit": _action(actions, *LEAD_TYPES),
                     "kupovina": _action(actions, *PURCHASE_TYPES),
                 },
                 # Vrednost kupovina (Meta je prijavljuje samo za kupovine).
                 _action(row.get("action_values") or [], *PURCHASE_TYPES),
+                # Dodatne brojke koje postoje samo kod Mete.
+                {
+                    "results": results,
+                    "clicks_all": int(float(row.get("clicks") or 0)),
+                    "landing_views": _action(actions, "landing_page_view", "omni_landing_page_view"),
+                },
             ]
         )
-    return {"start": start.isoformat(), "end": end.isoformat(), "rows": out}
+    return {"start": start.isoformat(), "end": end.isoformat(), "rows": out, "campaigns": campaigns}
+
+
+RANKINGS = {
+    "ABOVE_AVERAGE": "Iznad proseka",
+    "AVERAGE": "Prosečno",
+    "BELOW_AVERAGE_35": "Ispod proseka (donjih 35 %)",
+    "BELOW_AVERAGE_20": "Ispod proseka (donjih 20 %)",
+    "BELOW_AVERAGE_10": "Ispod proseka (donjih 10 %)",
+}
+
+
+def fetch_rankings(token, account_id, start, end, limit=10):
+    """Ocene oglasa (kvalitet, angazovanje, konverzije) za oglase sa najvise prikaza.
+
+    Meta ih daje samo na nivou oglasa i samo za oglase sa dovoljno prikaza;
+    ostali dobijaju UNKNOWN i ne prikazuju se.
+    """
+    rows = _paged(
+        f"{BASE}/act_{format_id(account_id)}/insights",
+        token,
+        {
+            "level": "ad",
+            "time_range": json.dumps({"since": start.isoformat(), "until": end.isoformat()}),
+            "fields": "ad_id,ad_name,impressions,quality_ranking,engagement_rate_ranking,conversion_rate_ranking",
+            "limit": 500,
+        },
+    )
+    out = []
+    for row in sorted(rows, key=lambda r: int(float(r.get("impressions") or 0)), reverse=True):
+        ranks = [row.get(f) for f in ("quality_ranking", "engagement_rate_ranking", "conversion_rate_ranking")]
+        if not any(r in RANKINGS for r in ranks):
+            continue
+        out.append({"name": row.get("ad_name") or row.get("ad_id", ""), "ranks": [RANKINGS.get(r, "Nema ocene") for r in ranks]})
+        if len(out) >= limit:
+            break
+    return out
 
 
 def fetch_reach(token, account_id, start, end):

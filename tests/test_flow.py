@@ -270,7 +270,7 @@ team.post("/tim/klijent/1", data={
     "lay_ukupno": "1", "m_ukupno": ["impressions"], "s_ukupno": ["chart"], "chart_ukupno": "spend",
 })
 settings_page = team.get("/tim/klijent/1").text
-assert "Šta klijent vidi u izveštaju Meta Ads" in settings_page and "4 od 15 uključeno" in text(settings_page)
+assert "Šta klijent vidi u izveštaju Meta Ads" in settings_page and "4 od 23 uključeno" in text(settings_page)
 meta = visitor.get(f"{path}?kanal=meta").text
 plain = text(meta)
 assert hero(meta) == "U poslednjih 30 dana Meta Ads oglasi su bili aktivni.", hero(meta)
@@ -319,6 +319,29 @@ assert "Prihod po 1 uloženom" not in plain, "zbirni ROAS se ne racuna preko raz
 assert "4,00x" in plain and "2,00x" in plain  # ROAS po kanalu u tabeli: Google i TikTok
 visitor.get(f"{path}?kanal=google_ads")
 assert len(fake.reach_calls) == 2, "doseg se ne cita kad nije ukljucen"
+
+# 12e. Meta kolone kao u Ads Manager-u: rezultati prema cilju, budzet, svi klikovi, odredisna strana, ocene.
+team.post("/tim/klijent/1", data={
+    **SETTINGS,
+    "lay_meta": "1",
+    "m_meta": ["spend", "budget", "results", "cost_per_result", "clicks", "clicks_all", "cpc_all",
+               "landing_views", "cost_per_landing"],
+    "s_meta": ["campaigns", "rankings"],
+})
+settings_text = text(team.get("/tim/klijent/1").text)
+assert "Rezultati (prema cilju kampanje)" in settings_text and "Ocene oglasa" in settings_text
+assert settings_text.count("Budžet kampanje") == 1, "budzet se nudi samo za Metu"
+meta = visitor.get(f"{path}?kanal=meta").text
+assert hero(meta) == "U poslednjih 30 dana Meta Ads oglasi su vam doneli 60 upita, po prosečnoj ceni od 2,50 € po rezultatu.", hero(meta)
+plain = text(meta)
+for expected in ("60 upita", "Cena po rezultatu", "2,50 €", "Klikova na link", "1.050", "0,14 €", "480",
+                 "Pregleda odredišne strane", "0,31 €", "10 € dnevno", "Budžet", "Kako Meta ocenjuje oglase",
+                 "Video: nova kuhinja", "Iznad proseka", "Prosečno", "Ispod proseka (donjih 35 %)"):
+    assert expected in plain, expected
+assert "Slika: malo prikaza" not in plain, "oglasi bez ocene se ne prikazuju"
+calls = fake.ranking_calls
+visitor.get(f"{path}?kanal=meta")
+assert fake.ranking_calls == calls == 1, "ocene se pamte"
 
 # Povratak na podrazumevano za dalje provere.
 DEFAULT_ADS = {"m": ["spend", "impressions", "clicks", "cpc", "conversions", "cpa"], "s": ["chart", "campaigns"]}
@@ -445,4 +468,13 @@ team.post("/tim/odjava", data={"_csrf": token})
 assert team.get("/tim").status_code == 302
 
 assert fmt.money_sum({"EUR": 10, "RSD": 5}) == "10 € i 5 RSD"
+# Kampanje sa razlicitim ciljevima nemaju zbirni "rezultat" (kao u Ads Manager-u).
+import report  # noqa: E402
+kind = fmt.CONV_KINDS["upit"]
+mixed = report._ads_values(kind, {"EUR": 100}, 1000, 50, 0, {"EUR": 0}, None, {"results": 30}, ["leads", "link_clicks"])
+same = report._ads_values(kind, {"EUR": 100}, 1000, 50, 0, {"EUR": 0}, None, {"results": 30}, ["link_clicks"])
+assert mixed["results"] is None and mixed["cost_per_result"] is None
+assert same["results"] == "30 klikova na link" and same["cost_per_result"] == "3,33 €"
+assert report._ads_values(kind, {"EUR": 1}, 1, 1, 0, {"EUR": 0}, None, {"results": 1}, ["None"])["results"] is None
+
 print("SVE PROVERE SU PROSLE")

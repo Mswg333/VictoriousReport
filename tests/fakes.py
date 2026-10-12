@@ -56,7 +56,8 @@ class FakeNet:
         self.ms_refresh_tokens = ["ms-rt-1"]
         self.tiktok_ranges = []
         self.ranges = []           # (kanal, od, do) za svaki zahtev za dnevne brojke
-        self.reach_calls = []      # (nivo, od) za svaki zahtev za doseg (Meta)
+        self.reach_calls = []
+        self.ranking_calls = 0      # (nivo, od) za svaki zahtev za doseg (Meta)
         self.ms_range = None
 
     def count(self, part):
@@ -240,7 +241,20 @@ class FakeNet:
                 200,
                 {"data": [{"id": "act_9001", "account_id": "9001", "name": "Hrast Meta", "currency": "EUR", "account_status": 1}]},
             )
+        if path.endswith("/act_9001/campaigns"):
+            assert "objective" in params["fields"]
+            return FakeResponse(
+                200, {"data": [{"id": "51", "objective": "OUTCOME_LEADS", "daily_budget": "1000"}]}
+            )
         assert path.endswith("/act_9001/insights"), path
+        if params and params.get("level") == "ad":  # ocene oglasa
+            self.ranking_calls += 1
+            return FakeResponse(200, {"data": [
+                {"ad_id": "1", "ad_name": "Video: nova kuhinja", "impressions": "9000", "quality_ranking": "ABOVE_AVERAGE",
+                 "engagement_rate_ranking": "AVERAGE", "conversion_rate_ranking": "BELOW_AVERAGE_35"},
+                {"ad_id": "2", "ad_name": "Slika: malo prikaza", "impressions": "50", "quality_ranking": "UNKNOWN",
+                 "engagement_rate_ranking": "UNKNOWN", "conversion_rate_ranking": "UNKNOWN"},
+            ]})
         if "after" in query:  # druga strana
             since, until = date.fromisoformat(query["since"][0]), date.fromisoformat(query["until"][0])
             all_days = days_between(since, until)
@@ -272,8 +286,10 @@ class FakeNet:
                 "spend": "5.00",
                 "impressions": "2000",
                 "inline_link_clicks": "20",
+                "clicks": "35",
                 "actions": [
                     {"action_type": "link_click", "value": "20"},
+                    {"action_type": "landing_page_view", "value": "16"},
                     {"action_type": "lead", "value": "2"},
                     {"action_type": "omni_purchase", "value": "1"},
                 ],

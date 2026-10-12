@@ -11,7 +11,7 @@ from datetime import timedelta
 import fmt
 import layout
 import platforms
-from platforms import base, ga4
+from platforms import base, ga4, meta_ads
 from platforms.base import SourceError
 
 COMBINED = layout.COMBINED
@@ -106,16 +106,43 @@ def _range_text(start, end):
 
 # ---------------------------------------------------------------- brojke oglasa
 
-def _ads_values(kind, spend_by_currency, impressions, clicks, conversions, value_by_currency, reach=None):
+def _ads_values(kind, spend_by_currency, impressions, clicks, conversions, value_by_currency, reach=None,
+                extra=None, result_kinds=None, info=None):
     """Tekst za svaku brojku. None znaci da se brojka ne moze izracunati
     (na primer cena po kliku kad su kanali u razlicitim valutama).
 
     reach: (doseg, frekvencija) ili None kad kanal nema doseg.
+    extra, result_kinds, info: dodatne brojke kanala (Meta): zbir dodatnih brojki,
+    vrste rezultata (za zbir) ili podaci o jednoj kampanji (za red tabele).
     """
     currency = next(iter(spend_by_currency)) if len(spend_by_currency) == 1 else None
     spend = sum(spend_by_currency.values())
     value = sum(value_by_currency.values())
+    extra = extra or {}
+
+    def per(amount):
+        return fmt.money(spend / amount, currency, 2) if currency and amount else None
+
+    # Rezultati: u redu kampanje prema njenom cilju; u zbiru samo ako sve kampanje imaju isti cilj.
+    result = info.get("result") if info is not None else (
+        result_kinds[0] if result_kinds and len(result_kinds) == 1 and result_kinds[0] != "None" else None
+    )
+    results = extra.get("results", 0)
+    budget = None
+    if info and currency:
+        if info.get("daily"):
+            budget = f"{fmt.money(info['daily'], currency)} dnevno"
+        elif info.get("lifetime"):
+            budget = f"{fmt.money(info['lifetime'], currency)} ukupno"
+    clicks_all, landing = extra.get("clicks_all", 0), extra.get("landing_views", 0)
     return {
+        "results": f"{fmt.conv(results)} {fmt.plural(results, meta_ads.RESULT_FORMS[result])}" if result else None,
+        "cost_per_result": per(results) if result else None,
+        "budget": budget,
+        "clicks_all": fmt.num(clicks_all) if extra else None,
+        "cpc_all": per(clicks_all),
+        "landing_views": fmt.num(landing) if extra else None,
+        "cost_per_landing": per(landing),
         "reach": fmt.num(reach[0]) if reach else None,
         "frequency": fmt.num(reach[1], 2) if reach and reach[0] else None,
         "value": fmt.money_sum(value_by_currency) if value_by_currency else None,
@@ -133,9 +160,9 @@ def _ads_values(kind, spend_by_currency, impressions, clicks, conversions, value
     }
 
 
-def _ads_labels(kind):
+def _ads_labels(kind, key=None):
     """(oznaka u velikom broju, naslov kolone u tabeli) za svaku brojku."""
-    return {
+    labels = {
         "spend": ("Potrošeno na oglase", "Potrošeno"),
         "impressions": ("Puta je oglas prikazan", "Prikazi"),
         "clicks": ("Klikova na oglas", "Klikovi"),
@@ -149,7 +176,18 @@ def _ads_labels(kind):
         "frequency": ("Puta je prosečna osoba videla oglas", "Frekvencija"),
         "value": (kind["value"], "Vrednost"),
         "roas": ("Prihod po 1 uloženom (ROAS)", "ROAS"),
+        "results": ("Rezultati", "Rezultati"),
+        "cost_per_result": ("Cena po rezultatu", "Cena po rezultatu"),
+        "budget": ("Budžet", "Budžet"),
+        "clicks_all": ("Svih klikova (na objavu, profil i link)", "Svi klikovi"),
+        "cpc_all": ("Cena po kliku (svi klikovi)", "CPC (svi)"),
+        "landing_views": ("Pregleda odredišne strane", "Pregledi strane"),
+        "cost_per_landing": ("Cena po pregledu odredišne strane", "Cena pregleda"),
     }
+    if key == meta_ads.KEY:  # kod Mete su "klikovi" klikovi na link
+        labels["clicks"] = ("Klikova na link", "Klikovi na link")
+        labels["cpc"] = ("Prosečna cena klika na link", "Cena klika na link")
+    return labels
 
 
 def _ads_report(client, key, label, scope, totals, spend_by_currency, value_by_currency, daily, start, end,
@@ -161,11 +199,14 @@ def _ads_report(client, key, label, scope, totals, spend_by_currency, value_by_c
     reach: (doseg, frekvencija) za ceo period, samo kod Mete.
     """
     lay = layout.get(client, key)
-    shown = [m for m, _ in layout.ADS_METRICS if m in lay["m"]]
+    shown = [m for m, _ in layout.options(key)[0] if m in lay["m"]]
     kind = fmt.CONV_KINDS.get(client["conv_kind"], fmt.CONV_KINDS["upit"])
-    labels = _ads_labels(kind)
+    labels = _ads_labels(kind, key)
     conversions, clicks, impressions = totals["conversions"], totals["clicks"], totals["impressions"]
-    values = _ads_values(kind, spend_by_currency, impressions, clicks, conversions, value_by_currency, reach)
+    values = _ads_values(
+        kind, spend_by_currency, impressions, clicks, conversions, value_by_currency, reach,
+        totals.get("extra"), totals.get("result_kinds"),
+    )
     active = bool(impressions or clicks or sum(spend_by_currency.values()))
     when = _phrase(start, end)
     notes = []
@@ -182,6 +223,13 @@ def _ads_report(client, key, label, scope, totals, spend_by_currency, value_by_c
         if "cpa" in shown and conversions and values["cpa"]:
             hero += f", po prosečnoj ceni od {values['cpa']} {kind['per']}"
             told.add("cpa")
+        hero += "."
+    elif "results" in shown and values["results"]:
+        hero = f"{when} {scope} su vam doneli {values['results']}"
+        told.add("results")
+        if "cost_per_result" in shown and values["cost_per_result"]:
+            hero += f", po prosečnoj ceni od {values['cost_per_result']} po rezultatu"
+            told.add("cost_per_result")
         hero += "."
     elif "clicks" in shown:
         hero = f"{when} {scope} su vam doneli {fmt.num(clicks)} {fmt.plural(clicks, fmt.CLICK_FORMS)} ka sajtu."
@@ -240,6 +288,9 @@ def _ads_report(client, key, label, scope, totals, spend_by_currency, value_by_c
                         r["conversions"],
                         {r["currency"]: r["value"]},
                         r.get("reach"),
+                        r.get("extra"),
+                        None,
+                        r.get("info", {}) if r.get("extra") is not None else None,
                     ),
                 )
                 for r in rows
@@ -312,6 +363,12 @@ def _single(client, mod, source, start, end, data_range):
             ]
         except SourceError as exc:
             notes.append(f"Pojmovi pretrage nisu učitani: {exc}")
+
+    if mod.KEY == meta_ads.KEY and "rankings" in lay["s"]:
+        try:
+            report["rankings"] = platforms.ad_rankings(source["account_id"], summary["start"], summary["end"])
+        except SourceError as exc:
+            notes.append(f"Ocene oglasa nisu učitane: {exc}")
     return report, notes
 
 

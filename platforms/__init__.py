@@ -50,7 +50,7 @@ def default_range():
 
 def _keys(platform, account_id, start, end):
     # "v2": od kad redovi imaju i vrednost konverzija; stariji zapamceni odgovori se ne koriste.
-    suffix = f"{platform}:{account_id}:v2:{start.isoformat()}:{end.isoformat()}"
+    suffix = f"{platform}:{account_id}:v3:{start.isoformat()}:{end.isoformat()}"
     return f"daily:{suffix}", f"daily_error:{suffix}"
 
 
@@ -153,10 +153,13 @@ def summarize(payload, start, end, conv_kind):
         start + timedelta(days=i): {"spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0, "value": 0.0}
         for i in range(days)
     }
+    totals["extra"] = {}
+    info = payload.get("campaigns", {})  # podaci o kampanjama (cilj, budzet), ako ih kanal daje
     campaigns = {}
     for row in payload["rows"]:
         day_text, campaign_id, name, spend, impressions, clicks, conversions = row[:7]
         value = row[7] if len(row) > 7 else 0.0
+        extra = row[8] if len(row) > 8 else {}  # brojke koje ima samo neki kanal (npr. Meta rezultati)
         day = date.fromisoformat(day_text)
         if day < start or day > end:
             continue
@@ -164,7 +167,11 @@ def summarize(payload, start, end, conv_kind):
             conversions = conversions.get(conv_kind, 0)
         c = campaigns.setdefault(
             campaign_id,
-            {"id": campaign_id, "name": name, "spend": 0.0, "impressions": 0, "clicks": 0, "conversions": 0.0, "value": 0.0},
+            {
+                "id": campaign_id, "name": name, "spend": 0.0, "impressions": 0, "clicks": 0,
+                "conversions": 0.0, "value": 0.0, "extra": {},
+                "info": info.get(campaign_id, {}),
+            },
         )
         for target in (c, totals, per_day[day]):
             target["spend"] += spend
@@ -172,10 +179,18 @@ def summarize(payload, start, end, conv_kind):
             target["clicks"] += clicks
             target["conversions"] += conversions
             target["value"] += value
+        for target in (c["extra"], totals["extra"]):
+            for key, amount in extra.items():
+                target[key] = target.get(key, 0) + amount
     for target in [totals, *campaigns.values()]:
         target["spend"] = round(target["spend"], 2)
         target["conversions"] = round(target["conversions"], 2)
         target["value"] = round(target["value"], 2)
+    # Vrste rezultata kampanja koje su trosile novac. Zbir rezultata ima smisla
+    # samo kad su sve iste (kao u Ads Manager-u).
+    totals["result_kinds"] = sorted(
+        {str(c["info"].get("result")) for c in campaigns.values() if c["spend"] or c["impressions"]}
+    )
     return {
         "start": start,
         "end": end,
@@ -204,9 +219,18 @@ def reach(account_id, start, end):
     )
 
 
+def ad_rankings(account_id, start, end):
+    """Ocene oglasa (samo Meta Ads), zapamcene kao i ostale brojke."""
+    return base.cached(
+        f"rankings:{meta_ads.KEY}:{account_id}:{start.isoformat()}:{end.isoformat()}",
+        base.data_ttl(end),
+        lambda: meta_ads.fetch_rankings(meta_ads.prepare(), account_id, start, end),
+    )
+
+
 def clear(platform, account_id):
     """Brise zapamcene brojke za jedan nalog, za sve periode."""
-    for prefix in ("daily", "daily_error", "terms", "reach"):
+    for prefix in ("daily", "daily_error", "terms", "reach", "rankings"):
         base.cache_delete_prefix(f"{prefix}:{platform}:{account_id}:")
     if platform == ga4.KEY:
         base.cache_delete_prefix(f"ga4:{account_id}:")

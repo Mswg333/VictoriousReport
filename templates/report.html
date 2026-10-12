@@ -123,6 +123,29 @@
   </section>
   {% endif %}
 
+  {% if view.rankings is defined %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Kako Meta ocenjuje oglase</h2>
+      <p class="muted">Meta poredi svaki oglas sa oglasima koji ciljaju istu publiku. Ocene postoje samo za oglase sa dovoljno prikaza.</p>
+    </div>
+    {% if view.rankings %}
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Oglas</th><th>Kvalitet</th><th>Angažovanje</th><th>Konverzije</th></tr></thead>
+        <tbody>
+          {% for ad in view.rankings %}
+          <tr><td><strong style="font-weight: 600">{{ ad.name }}</strong></td>{% for r in ad.ranks %}<td>{{ r }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="muted">U ovom periodu nijedan oglas nije imao dovoljno prikaza za ocenu.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
   {% if view.kind == 'site' and (view.channels or view.pages) %}
   <section class="row gap-24" style="align-items: stretch">
     {% if view.channels %}

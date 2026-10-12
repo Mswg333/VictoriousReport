@@ -27,7 +27,11 @@ izveštaju …“. Isto važi za zbirni izveštaj i za izveštaj o sajtu.
 
 - **Kanali oglašavanja i zbirni izveštaj:** potrošeno, prikazi, klikovi, CTR,
   cena po kliku, cena za 1.000 prikaza, konverzije, stopa konverzije i cena po
-  konverziji, vrednost konverzija i ROAS. Kod Mete još i doseg i frekvencija.
+  konverziji, vrednost konverzija i ROAS. Meta ima i kolone kao u Ads
+  Manager-u: doseg, frekvenciju, rezultate i cenu po rezultatu, budžet
+  kampanje, sve klikove i cenu po kliku (svi klikovi), preglede odredišne
+  strane i cenu po pregledu, kao i ocene oglasa (kvalitet, angažovanje,
+  konverzije).
   Od delova izveštaja tu su grafikon po danima, tabela kampanja i, samo za
   Google Ads, pojmovi pretrage. Grafikon može da prikazuje klikove, prikaze,
   potrošnju, konverzije ili vrednost konverzija.
@@ -189,6 +193,16 @@ Napomene:
   `conversions_value`, Meta vrednost kupovina, Microsoft `Revenue`, a TikTok
   ROAS kupovina pomnožen potrošnjom. **ROAS** = vrednost / potrošeno; u zbirnom
   izveštaju se računa samo kad su svi kanali u istoj valuti.
+- **Rezultati (Meta)** se računaju prema cilju kampanje: upiti za Leads,
+  kupovine za Sales, klikovi na link za Traffic, interakcije za Engagement,
+  razgovori za Messages, instalacije za App promotion. Ads Manager gleda cilj
+  optimizacije skupa oglasa, pa brojka može malo da odstupa. Kampanje za svest
+  o brendu (rezultat je doseg) imaju „–“. Zbir rezultata postoji samo kad sve
+  kampanje imaju isti cilj, kao u Ads Manager-u.
+- **Budžet (Meta)** je trenutni budžet kampanje, ne budžet u izabranom
+  periodu, pa se prikazuje samo u tabeli kampanja.
+- **Ocene oglasa (Meta)** Meta daje samo na nivou oglasa i samo za oglase sa
+  dovoljno prikaza; prikazuje se 10 oglasa sa najviše prikaza.
 - **Doseg i frekvencija (Meta)** se ne mogu sabrati po danima, pa se za svaki
   izabrani period čitaju posebno, i to samo kad su uključeni.
 - Klijent može da ima najviše jedan nalog po kanalu.
