@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Rezultati vaših kampanja{% endblock %}
+{% block head %}{% if logo_url(client) %}<link rel="icon" href="{{ logo_url(client) }}">{% endif %}{% endblock %}
 {% block body %}
 <header class="topbar">
-  <div class="topbar-inner"><img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious"></div>
+  <div class="topbar-inner cobrand">
+    <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious">
+    {% if logo_url(client) %}<span class="cobrand-amp" aria-hidden="true">&amp;</span><img class="client-logo" src="{{ logo_url(client) }}" alt="{{ client.name }}">{% endif %}
+  </div>
 </header>
 <main class="gate">
   {% if unavailable and no_data %}

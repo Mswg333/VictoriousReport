@@ -56,6 +56,14 @@ izveštaju …“. Isto važi za zbirni izveštaj i za izveštaj o sajtu.
 Izbor se čuva po klijentu (kolona `layout`). Klijenti koji još nisu podešavani
 vide isto što i ranije.
 
+## Logo klijenta
+
+U podešavanjima klijenta, u delu „Logo klijenta“, dodaje se PNG, JPG ili WebP
+logo do 1 MB. Prikazuje se u zaglavlju izveštaja i strane za lozinku kao
+„Victorious & logo klijenta“ i kao ikonica u tabu browsera. Logo se čuva u bazi
+(tabela `portal_logos`), jer server briše fajlove pri svakom postavljanju. SVG
+se namerno ne prima, jer može da sadrži skriptu.
+
 ## Period koji klijent vidi
 
 U podešavanjima klijenta tim bira period „od–do“, na primer od 01.01. do 31.01.

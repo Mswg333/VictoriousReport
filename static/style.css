@@ -198,3 +198,11 @@ details summary { cursor: pointer; font-weight: 600; color: var(--purple-dark); 
 .funnel-step { display: flex; flex-direction: column; gap: 6px; }
 .funnel-track { height: 14px; border-radius: 7px; background: var(--purple-tint); overflow: hidden; }
 .funnel-bar { height: 100%; border-radius: 7px; background: var(--purple); }
+
+/* logo klijenta pored Victorious logoa */
+.cobrand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cobrand-amp { font-size: 20px; font-weight: 600; color: var(--muted); }
+.client-logo { display: block; height: 40px; width: auto; max-width: 160px; object-fit: contain; }
+.logo-preview { padding: 16px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--white); }
+input[type=file] { font: inherit; max-width: 100%; }
+@media (max-width: 480px) { .client-logo { height: 32px; max-width: 120px; } }

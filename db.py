@@ -44,6 +44,7 @@ SCHEMA = [
         range_start TEXT NOT NULL DEFAULT '',
         range_end TEXT NOT NULL DEFAULT '',
         layout TEXT NOT NULL DEFAULT '',
+        logo_version TEXT NOT NULL DEFAULT '',
         failed_attempts INTEGER NOT NULL DEFAULT 0,
         locked_until INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
@@ -69,6 +70,13 @@ SCHEMA = [
         scopes TEXT NOT NULL DEFAULT '',
         connected_by TEXT NOT NULL,
         connected_at TEXT NOT NULL
+    )""",
+    # Logo klijenta. U bazi, a ne kao fajl, jer server brise fajlove pri svakom postavljanju.
+    """CREATE TABLE IF NOT EXISTS portal_logos (
+        client_id INTEGER PRIMARY KEY,
+        mime TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL
     )""",
     # Kes odgovora sa platformi, da se strane otvaraju brzo i da se ne trosi kvota.
     """CREATE TABLE IF NOT EXISTS portal_cache (
@@ -184,7 +192,7 @@ def init_schema():
     conn.commit()
     # Kolone dodate posle prvih verzija.
     existing = columns("portal_clients")
-    for column in ("range_start", "range_end", "layout"):
+    for column in ("range_start", "range_end", "layout", "logo_version"):
         if column not in existing:
             cur.execute(f"ALTER TABLE portal_clients ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
     conn.commit()

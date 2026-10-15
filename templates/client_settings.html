@@ -166,6 +166,36 @@
     </form>
 
     <section class="card stack gap-12">
+      <div class="stack gap-4">
+        <h2>Logo klijenta</h2>
+        <p class="muted">Prikazuje se u zaglavlju izveštaja pored Victorious logoa i kao ikonica u tabu browsera. PNG, JPG ili WebP, najviše 1 MB; najbolje izgleda logo na providnoj ili beloj pozadini.</p>
+      </div>
+      {% if logo_url(client) %}
+      <div class="cobrand logo-preview">
+        <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious">
+        <span class="cobrand-amp" aria-hidden="true">&amp;</span>
+        <img class="client-logo" src="{{ logo_url(client) }}" alt="Logo: {{ client.name }}">
+      </div>
+      {% endif %}
+      <div class="row gap-12" style="align-items: flex-end">
+        <form class="row gap-12" method="post" action="{{ url_for('client_logo_upload', client_id=client.id) }}" enctype="multipart/form-data" style="align-items: flex-end">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <div class="stack gap-8">
+            <label class="field" for="logo">{% if logo_url(client) %}Zameni logo{% else %}Dodaj logo{% endif %}</label>
+            <input id="logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp" required>
+          </div>
+          <button class="btn primary" type="submit">Sačuvaj logo</button>
+        </form>
+        {% if logo_url(client) %}
+        <form method="post" action="{{ url_for('client_logo_remove', client_id=client.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn danger" type="submit">Ukloni logo</button>
+        </form>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="card stack gap-12">
       <h2>Podaci i uklanjanje</h2>
       <div class="row gap-12">
         <form method="post" action="{{ url_for('client_refresh', client_id=client.id) }}">

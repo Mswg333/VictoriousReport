@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 
 load_dotenv()  # lokalno cita .env; na serveru promenljive stizu iz okruzenja
 
+import base64  # noqa: E402
+import hashlib  # noqa: E402
 import hmac  # noqa: E402
 import os  # noqa: E402
 import secrets  # noqa: E402
@@ -17,6 +19,7 @@ from functools import wraps  # noqa: E402
 
 from flask import (  # noqa: E402
     Flask,
+    Response,
     abort,
     flash,
     redirect,
@@ -72,6 +75,7 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=PRODUCTION,
     PERMANENT_SESSION_LIFETIME=timedelta(days=14),
+    MAX_CONTENT_LENGTH=2 * 1024 * 1024,  # najveci zahtev (logo klijenta)
 )
 if ON_RENDER:
     # Render stoji ispred aplikacije; ovo cuva https i pravi domen u linkovima.
@@ -144,6 +148,7 @@ def inject_helpers():
         "periods": PERIODS,
         # Upozorenja o vezama koje isticu vidi samo tim.
         "team_warnings": meta_ads.warnings() if user else [],
+        "logo_url": logo_url,
     }
 
 
@@ -792,6 +797,7 @@ def client_refresh(client_id):
 def client_remove(client_id):
     client = get_client_or_404(client_id)
     db.execute("DELETE FROM portal_sources WHERE client_id = ?", (client_id,))
+    db.execute("DELETE FROM portal_logos WHERE client_id = ?", (client_id,))
     db.execute("DELETE FROM portal_clients WHERE id = ?", (client_id,))
     flash(f"{client['name']} je uklonjen sa portala. Njegov link više ne radi.", "ok")
     return redirect(url_for("clients"))
@@ -999,7 +1005,90 @@ def render_report(client, preview):
     )
 
 
+# ---------------------------------------------------------------- logo klijenta
+
+LOGO_MAX_BYTES = 1024 * 1024
+# SVG se namerno ne prima: moze da sadrzi skriptu koja bi se izvrsila na adresi portala.
+LOGO_TYPES = {"image/png": "PNG", "image/jpeg": "JPG", "image/webp": "WebP"}
+
+
+def image_type(data):
+    """Vrsta slike prema prvim bajtovima fajla (ne prema imenu ili onome sto browser kaze)."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def logo_url(client):
+    """Adresa logoa klijenta, ili None. Verzija u adresi menja se sa svakim novim logoom."""
+    if not client or not client.get("logo_version"):
+        return None
+    return url_for("client_logo", token=client["token"], v=client["logo_version"])
+
+
+@app.post("/tim/klijent/<int:client_id>/logo")
+@team_required
+def client_logo_upload(client_id):
+    client = get_client_or_404(client_id)
+    upload = request.files.get("logo")
+    data = upload.read(LOGO_MAX_BYTES + 1) if upload else b""
+    mime = image_type(data)
+    if not data:
+        flash("Izaberite fajl sa logoom.", "error")
+    elif len(data) > LOGO_MAX_BYTES:
+        flash("Logo je prevelik. Najviše 1 MB.", "error")
+    elif not mime:
+        flash("Logo mora biti PNG, JPG ili WebP slika.", "error")
+    else:
+        db.execute("DELETE FROM portal_logos WHERE client_id = ?", (client_id,))
+        db.execute(
+            "INSERT INTO portal_logos (client_id, mime, data, updated_at) VALUES (?, ?, ?, ?)",
+            (client_id, mime, base64.b64encode(data).decode(), datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        version = hashlib.sha256(data).hexdigest()[:12]
+        db.execute("UPDATE portal_clients SET logo_version = ? WHERE id = ?", (version, client_id))
+        flash(f"Logo za {client['name']} je sačuvan.", "ok")
+    return redirect(url_for("client_settings", client_id=client_id))
+
+
+@app.post("/tim/klijent/<int:client_id>/logo/ukloni")
+@team_required
+def client_logo_remove(client_id):
+    get_client_or_404(client_id)
+    db.execute("DELETE FROM portal_logos WHERE client_id = ?", (client_id,))
+    db.execute("UPDATE portal_clients SET logo_version = '' WHERE id = ?", (client_id,))
+    flash("Logo je uklonjen.", "ok")
+    return redirect(url_for("client_settings", client_id=client_id))
+
+
+@app.get("/k/<token>/logo")
+def client_logo(token):
+    """Logo se vidi i pre unosa lozinke, da klijent odmah prepozna svoj izvestaj."""
+    client = db.query("SELECT id FROM portal_clients WHERE token = ?", (token,), one=True)
+    row = client and db.query("SELECT mime, data FROM portal_logos WHERE client_id = ?", (client["id"],), one=True)
+    if not row or row["mime"] not in LOGO_TYPES:
+        abort(404)
+    resp = Response(base64.b64decode(row["data"]), mimetype=row["mime"])
+    resp.headers["Cache-Control"] = "private, max-age=604800"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Content-Security-Policy"] = "default-src 'none'"
+    return resp
+
+
 # ---------------------------------------------------------------- greske
+
+@app.errorhandler(413)
+def too_large(_err):
+    flash("Fajl je prevelik. Logo može imati najviše 1 MB.", "error")
+    match = request.path.split("/")
+    if len(match) > 3 and match[1] == "tim" and match[2] == "klijent" and match[3].isdigit():
+        return redirect(url_for("client_settings", client_id=int(match[3])))
+    return redirect(url_for("clients"))
+
 
 @app.errorhandler(400)
 @app.errorhandler(404)

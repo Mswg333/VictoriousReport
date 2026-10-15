@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ client.name }}: rezultati kampanja{% endblock %}
+{% block head %}{% if logo_url(client) %}<link rel="icon" href="{{ logo_url(client) }}">{% endif %}{% endblock %}
 {% block body %}
 {% if preview %}
 <div class="preview-bar small">Ovo je pregled za tim. Klijent vidi isto, bez ove trake. <a href="{{ url_for('client_settings', client_id=client.id) }}">Nazad na podešavanja</a></div>
@@ -8,7 +9,10 @@
 <header class="topbar">
   <div class="topbar-inner row between gap-16" style="max-width: 1080px">
     <div class="row gap-16">
-      <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious">
+      <div class="cobrand">
+        <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="Victorious">
+        {% if logo_url(client) %}<span class="cobrand-amp" aria-hidden="true">&amp;</span><img class="client-logo" src="{{ logo_url(client) }}" alt="{{ client.name }}">{% endif %}
+      </div>
       <div class="client-name"><strong>{{ client.name }}</strong><span class="muted small">Izveštaj o kampanjama</span></div>
     </div>
     {% if presets %}

@@ -256,6 +256,49 @@ assert "Izveštaj za Nameštaj Hrast d.o.o." in gate.text
 assert "Lozinka nije tačna" in visitor.post(path, data={"_csrf": csrf(gate.text), "lozinka": "pogresna"}).text
 assert visitor.post(path, data={"_csrf": csrf(gate.text), "lozinka": password}).status_code == 302
 
+# 9b. Logo klijenta: u zaglavlju izvestaja i strane za lozinku, i kao ikonica taba.
+import io  # noqa: E402
+import struct  # noqa: E402
+import zlib  # noqa: E402
+
+
+def tiny_png(color):
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    raw = b"\x00" + bytes(color) * 2
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 1, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def upload(data, name="logo.png"):
+    return team.post("/tim/klijent/1/logo", data={"_csrf": token, "logo": (io.BytesIO(data), name)},
+                     content_type="multipart/form-data", follow_redirects=True)
+
+
+assert "Dodaj logo" in team.get("/tim/klijent/1").text and 'rel="icon"' not in visitor.get(path).text
+resp = upload(b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', "logo.svg")
+assert "Logo mora biti PNG, JPG ili WebP slika." in resp.text
+assert "Logo je prevelik" in upload(b"\x89PNG\r\n\x1a\n" + b"0" * (1024 * 1024)).text
+assert "Fajl je prevelik" in upload(b"0" * (3 * 1024 * 1024)).text
+first = tiny_png((151, 93, 165))
+resp = upload(first)
+assert "Logo za Nameštaj Hrast d.o.o. je sačuvan." in resp.text and "Zameni logo" in resp.text
+logo_src = re.search(r'class="client-logo" src="([^"]+)"', resp.text).group(1)
+page = visitor.get(path).text
+assert f'<link rel="icon" href="{logo_src}">' in page and 'class="cobrand-amp"' in page and logo_src in page
+gate = flask_app.test_client().get(path).text  # i pre unosa lozinke
+assert "Lozinka" in gate and logo_src in gate
+served = flask_app.test_client().get(logo_src)
+assert served.status_code == 200 and served.data == first and served.mimetype == "image/png"
+assert served.headers["X-Content-Type-Options"] == "nosniff" and served.headers["Content-Security-Policy"] == "default-src 'none'"
+upload(tiny_png((0, 0, 0)))
+assert logo_src not in team.get("/tim/klijent/1").text, "nov logo dobija novu adresu, pa ga browser ne kesira"
+assert flask_app.test_client().get("/k/nepostoji/logo").status_code == 404
+resp = team.post("/tim/klijent/1/logo/ukloni", data={"_csrf": token}, follow_redirects=True)
+assert "Logo je uklonjen." in resp.text and 'class="client-logo"' not in resp.text
+assert 'rel="icon"' not in visitor.get(path).text
+upload(first)
+
 # 10. Zbirni izvestaj je prvi; kanali u razlicitim valutama nemaju zbirnu cenu.
 page = visitor.get(path).text
 tabs = re.findall(r'<a href="[^"]*kanal=([a-z0-9_]+)[^"]*"[^>]*>([^<]+)</a>', page.split('class="tabs"')[1].split("</nav>")[0])
@@ -544,6 +587,7 @@ team.post("/tim/klijent/1/ukloni", data={"_csrf": token})
 assert visitor.get(path).status_code == 404
 with flask_app.app_context():
     assert db.query("SELECT * FROM portal_sources") == []
+    assert db.query("SELECT client_id FROM portal_logos") == [], "logo se brise sa klijentom"
 
 # 18. Odjava.
 team.post("/tim/odjava", data={"_csrf": token})
