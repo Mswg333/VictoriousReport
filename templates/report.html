@@ -167,6 +167,82 @@
   </section>
   {% endif %}
 
+  {% if view.funnel %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Put do kupovine</h2>
+      <p class="muted">Koliko ljudi stigne do svakog koraka kupovine u ovom periodu.{% if view.funnel.summary %} {{ view.funnel.summary }}{% endif %}</p>
+    </div>
+    <div class="card stack gap-12">
+      {% for step in view.funnel.rows %}
+      <div class="funnel-step">
+        <div class="row between gap-12"><strong style="font-weight: 600">{{ step.label }}</strong><span class="num">{{ step.users }}</span></div>
+        <div class="funnel-track"><div class="funnel-bar" style="width: {{ step.width }}%"></div></div>
+        {% if step.note %}<span class="muted small">{{ step.note }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="muted small">Broje se ljudi koji su bar jednom uradili svaki korak u periodu, kao u Analytics izveštaju „Purchase journey“.</p>
+  </section>
+  {% endif %}
+
+  {% if view.products %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Proizvodi</h2>
+      <p class="muted">Proizvodi koji se najviše gledaju, i koliko puta su dodati u korpu i kupljeni. Mali procenat korpe znači da ljudi gledaju, ali ne kupuju.</p>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Proizvod</th><th class="num">Pregledi</th><th class="num">U korpu</th><th class="num">Od pregleda u korpu</th><th class="num">Kupljeno</th></tr></thead>
+        <tbody>
+          {% for p in view.products %}
+          <tr><td><strong style="font-weight: 600">{{ p.name }}</strong></td><td class="num">{{ p.views }}</td><td class="num">{{ p.carts }}</td><td class="num">{{ p.cart_rate }}</td><td class="num">{{ p.purchases }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if view.events %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Šta posetioci rade na sajtu</h2>
+      <p class="muted">Klikovi i druge radnje koje Analytics beleži, od najčešće ka ređoj.</p>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Radnja</th><th class="num">Koliko puta</th><th class="num">Koliko ljudi</th></tr></thead>
+        <tbody>
+          {% for e in view.events %}
+          <tr><td><strong style="font-weight: 600">{{ e.name }}</strong></td><td class="num">{{ e.count }}</td><td class="num">{{ e.users }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if view.landing %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Strane na koje ljudi stižu</h2>
+      <p class="muted">{% if view.landing.summary %}{{ view.landing.summary }} {% endif %}Poseta se računa kao „otišli odmah“ ako je trajala kraće od 10 sekundi, bez prelaska na drugu stranu i bez konverzije.</p>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Strana</th><th class="num">Poseta</th><th class="num">Otišli odmah</th></tr></thead>
+        <tbody>
+          {% for p in view.landing.rows %}
+          <tr><td style="overflow-wrap: anywhere"><strong style="font-weight: 600">{{ p.path }}</strong></td><td class="num">{{ p.sessions }}</td><td class="num{% if p.high %} problem{% endif %}">{{ p.bounce }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
   <footer class="footer muted stack gap-4">
     <p>Izveštaj prikazuje stanje zaključno sa {{ view.last_label }} i osvežava se nekoliko puta dnevno.</p>
     <p>Imate pitanje o rezultatima? Javite se svom kontaktu u agenciji Victorious.</p>

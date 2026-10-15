@@ -505,7 +505,7 @@ def _site(client, source, start, end):
             series.append({"date": day, "value": data["by_day"].get(day.strftime("%Y%m%d"), {}).get(metric, 0)})
         chart = _chart(series, text, title, none)
 
-    return {
+    view = {
         "kind": "site",
         "hero": hero,
         "figures": [{"value": values[m], "label": SITE_LABELS[m]} for m in shown if m not in told] if sessions else [],
@@ -524,4 +524,94 @@ def _site(client, source, start, end):
         else [],
         "range_text": _range_text(start, end),
         "last_label": fmt.day_label(end),
-    }, []
+    }
+    notes = []
+    if sessions and lay["s"] & layout.BEHAVIOR_SECTIONS:
+        try:
+            _behavior(view, lay["s"], ga4.behavior(source["account_id"], start, end), data["users"], notes)
+        except SourceError as exc:
+            notes.append(f"Ponašanje posetilaca nije učitano: {exc}")
+    return view, notes
+
+
+def _behavior(view, sections, data, site_users, notes):
+    """Put do kupovine, proizvodi, dogadjaji i ulazne strane (iz Analytics-a)."""
+    if "funnel" in sections:
+        counts = [data["funnel"].get(event, 0) for event, _ in ga4.FUNNEL]
+        if any(counts):
+            # Korak koji sajt ne salje (0, a kasniji koraci postoje) se izostavlja.
+            steps = [("Posetili sajt", site_users)]
+            for index, (event, label) in enumerate(ga4.FUNNEL):
+                if counts[index] or not any(counts[index + 1:]):
+                    steps.append((label, counts[index]))
+            first = steps[0][1] or 1
+            rows, worst = [], None
+            for index, (label, users) in enumerate(steps):
+                row = {"label": label, "users": fmt.num(users), "width": max(2, round(users / first * 100)), "note": ""}
+                if index:
+                    before = steps[index - 1][1]
+                    if before and users <= before:
+                        lost = 1 - users / before
+                        row["note"] = f"nastavilo {fmt.percent(users / before, 0)}, odustalo {fmt.percent(lost, 0)}"
+                        if worst is None or lost > worst[0]:
+                            worst = (lost, steps[index - 1][0], label, before, before - users)
+                rows.append(row)
+            summary = ""
+            if worst and worst[0] > 0:
+                summary = (
+                    f"Najviše ljudi odustaje između koraka „{worst[1]}“ i „{worst[2]}“: "
+                    f"od {fmt.num(worst[3])} njih {fmt.num(worst[4])} ({fmt.percent(worst[0], 0)}) ne nastavi dalje."
+                )
+            view["funnel"] = {"rows": rows, "summary": summary}
+        else:
+            notes.append(
+                "Put do kupovine nije prikazan: Analytics ne beleži e-commerce događaje (view_item, add_to_cart, "
+                "purchase). Za to sajt mora da šalje te događaje u GA4."
+            )
+
+    if "products" in sections:
+        if data["products"]:
+            view["products"] = [
+                {
+                    "name": p["name"],
+                    "views": fmt.num(p["views"]),
+                    "carts": fmt.num(p["carts"]),
+                    "purchases": fmt.num(p["purchases"]),
+                    "cart_rate": fmt.percent(p["carts"] / p["views"], 0) if p["views"] else "–",
+                }
+                for p in data["products"]
+            ]
+        else:
+            notes.append("Tabela proizvoda nije prikazana: Analytics ne beleži preglede proizvoda (view_item sa listom proizvoda).")
+
+    if "events" in sections and data["events"]:
+        view["events"] = [
+            {
+                "name": ga4.EVENTS.get(e["name"], e["name"]),
+                "count": fmt.num(e["count"]),
+                "users": f"{fmt.num(e['users'])} {fmt.plural(e['users'], fmt.USER_FORMS)}",
+            }
+            for e in data["events"][:12]
+        ]
+
+    if "landing" in sections and data["landing"]:
+        pages = data["landing"]
+        busy = [p for p in pages if p["sessions"] >= max(10, pages[0]["sessions"] * 0.1)]
+        worst = max(busy, key=lambda p: p["bounce"]) if busy else None
+        view["landing"] = {
+            "rows": [
+                {
+                    "path": p["path"],
+                    "sessions": fmt.num(p["sessions"]),
+                    "bounce": fmt.percent(p["bounce"], 0),
+                    "high": p["bounce"] >= 0.6,
+                }
+                for p in pages
+            ],
+            "summary": (
+                f"Najviše ljudi odmah ode sa strane {worst['path']}: {fmt.percent(worst['bounce'], 0)} poseta "
+                "završi se bez ikakve aktivnosti."
+            )
+            if worst and worst["bounce"] > 0
+            else "",
+        }

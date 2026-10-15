@@ -37,8 +37,21 @@ izveštaju …“. Isto važi za zbirni izveštaj i za izveštaj o sajtu.
   potrošnju, konverzije ili vrednost konverzija.
 - **Sajt (Analytics):** posete, posetioci, novi posetioci, prosečno trajanje
   posete, stopa angažovanja, pregledi strana i konverzije iz Analytics-a
-  (ključni događaji). Od delova izveštaja tu su grafikon, izvori poseta i
-  najgledanije strane.
+  (ključni događaji). Od delova izveštaja tu su grafikon, izvori poseta,
+  najgledanije strane i ponašanje posetilaca:
+  - **Put do kupovine:** posetili sajt → pogledali proizvod → korpa →
+    započeta kupovina → dostava → plaćanje → kupovina, sa procentom onih koji
+    odustanu na svakom koraku i rečenicom gde ih odustane najviše. Broje se
+    ljudi koji su bar jednom uradili korak (kao „Purchase journey“ u GA4).
+    Korak koji sajt ne šalje se izostavlja; ako sajt ne šalje e-commerce
+    događaje, deo se ne prikazuje, a tim dobija napomenu.
+  - **Proizvodi:** pregledi, dodavanja u korpu i kupovine po proizvodu.
+  - **Šta posetioci rade na sajtu:** GA4 događaji (klikovi na spoljne linkove,
+    forme, preuzimanja, video, e-commerce i sopstveni događaji), prevedeni.
+  - **Ulazne strane:** posete i procenat „otišli odmah“ (GA4 bounce rate).
+
+  GA4 ne beleži gde je na strani kliknuto; za mape klikova potreban je
+  poseban alat (npr. Microsoft Clarity).
 
 Izbor se čuva po klijentu (kolona `layout`). Klijenti koji još nisu podešavani
 vide isto što i ranije.
@@ -70,7 +83,7 @@ Sve se radi na strani **Izvor podataka**. Šta je potrebno po kanalu:
 | Kanal | Šta treba pripremiti | Kako se povezuje |
 |---|---|---|
 | Google Ads i Analytics | OAuth klijent u Google Cloud projektu "Victorious Portal" | dugme "Poveži Google nalog" |
-| Meta Ads | Meta aplikacija sa Marketing API-jem; sistemski korisnik u Business Manager-u sa dozvolom `ads_read` i dodeljenim oglasnim nalozima | token se nalepi u portal |
+| Meta Ads | Meta aplikacija sa Marketing API-jem i Facebook Login-om (`META_APP_ID`, `META_APP_SECRET`) | svako iz tima dugmetom "Poveži svoj Facebook nalog"; može i ručno lepljenje tokena |
 | Microsoft Ads (Bing) | developer token iz Microsoft Ads-a; aplikacija u Microsoft Entra (Azure) | dugme "Poveži Microsoft Ads" |
 | TikTok Ads | aplikacija na TikTok API for Business portalu, sa dozvolom za izveštaje | dugme "Poveži TikTok Ads" |
 
@@ -82,9 +95,15 @@ Važno za svaki kanal:
 - **Google:** portal čita u ime Google naloga koji povežete, pa se u Google
   Ads-u ne dodaje nov korisnik. Google Ads nema dozvolu samo za čitanje, pa
   ekran za dozvolu pominje upravljanje kampanjama.
-- **Meta:** sistemski korisnik i aplikacija vide se u podešavanjima Business
-  Manager-a. Po Meta dokumentaciji, osnovni nivo pristupa važi za sopstvene
-  oglasne naloge; za naloge drugih firmi može biti potreban App Review.
+- **Meta:** može biti povezano više ljudi, svako svojim Facebook nalogom.
+  Portal spaja njihove oglasne naloge i za svaki nalog koristi token onoga ko
+  ima pristup. Lični token traje oko 60 dana: portal ga pri povezivanju sam
+  produžava, a tim 7 dana pre isteka dobija upozorenje na vrhu svake strane;
+  obnova je isto dugme. Dok je aplikacija u razvojnom režimu, svako ko se
+  povezuje mora imati ulogu na aplikaciji (App roles). Adresa za povratak:
+  `https://VAŠA-ADRESA/auth/meta/callback` (Facebook Login, Valid OAuth
+  Redirect URIs). Token sistemskog korisnika i dalje može da se nalepi ručno i
+  ne ističe.
 - **Microsoft:** izveštaji se prave u pozadini, pa prvo učitavanje naloga traje
   nekoliko sekundi duže nego kod ostalih.
 - **TikTok:** odobrenje developerske aplikacije ume da potraje danima. Ako vas
@@ -163,6 +182,8 @@ treba upisati i u prvom slučaju; u MCC-u se pri tome ništa ne menja.
 | `ALLOWED_EMAILS` | opciono: samo ovi emailovi, odvojeni zarezom |
 | `MICROSOFT_ADS_CLIENT_ID`, `MICROSOFT_ADS_CLIENT_SECRET`, `MICROSOFT_ADS_DEVELOPER_TOKEN` | opciono, za Microsoft Ads |
 | `TIKTOK_APP_ID`, `TIKTOK_APP_SECRET` | opciono, za TikTok Ads |
+| `META_APP_ID`, `META_APP_SECRET` | opciono, za prijavu preko Facebook-a (Meta Ads) |
+| `META_LOGIN_CONFIG_ID` | samo za aplikacije tipa Business (Facebook Login for Business) |
 
 3. Adrese za povratak sa Render domenom dodajte u Google, Microsoft i TikTok
    aplikaciju.

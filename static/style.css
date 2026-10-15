@@ -193,3 +193,8 @@ details summary { cursor: pointer; font-weight: 600; color: var(--purple-dark); 
 @media (max-width: 640px) {
   .periods a { padding: 0 10px; }
 }
+
+/* put do kupovine */
+.funnel-step { display: flex; flex-direction: column; gap: 6px; }
+.funnel-track { height: 14px; border-radius: 7px; background: var(--purple-tint); overflow: hidden; }
+.funnel-bar { height: 100%; border-radius: 7px; background: var(--purple); }

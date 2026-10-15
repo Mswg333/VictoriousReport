@@ -6,9 +6,12 @@ sifrovan. Salju se samo zahtevi za citanje.
 """
 import json
 import os
+import threading
+import time
+from urllib.parse import urlencode
 
 import connections
-from platforms.base import SourceError, body, call
+from platforms.base import NotConnected, SourceError, body, call
 
 KEY = "meta"
 NAME = "Meta Ads"
@@ -16,6 +19,15 @@ CONNECTION = "meta"
 HAS_SEARCH_TERMS = False
 
 API_VERSION = os.environ.get("META_API_VERSION", "v25.0")
+
+# Za prijavu preko Facebook-a (licni tokeni clanova tima). Bez ovoga radi samo
+# rucno lepljenje tokena.
+APP_ID = os.environ.get("META_APP_ID", "").strip()
+APP_SECRET = os.environ.get("META_APP_SECRET", "").strip()
+# Aplikacije tipa "Business" koriste Facebook Login for Business i konfiguraciju
+# umesto spiska dozvola.
+LOGIN_CONFIG_ID = os.environ.get("META_LOGIN_CONFIG_ID", "").strip()
+WARN_DAYS = 7  # koliko dana pre isteka tokena tim dobija upozorenje
 HOST = "https://graph.facebook.com/"
 BASE = HOST + API_VERSION
 MAX_PAGES = 200
@@ -33,8 +45,167 @@ def accounts_scope():
     return ""
 
 
+# ---------------------------------------------------------------- veze (jedna ili vise)
+#
+# Moze biti povezano vise ljudi: svako svojim Facebook nalogom (veza "meta:<id>").
+# Stara veza "meta" (token sistemskog korisnika nalepljen rucno) i dalje radi.
+# Portal za svaki oglasni nalog koristi token onoga ko ima pristup tom nalogu.
+
+_owner = {}  # oglasni nalog -> veza ciji token ga vidi
+_owner_lock = threading.Lock()
+
+
+def people():
+    """Povezani ljudi, za prikaz: veza, ime, kad istice token (0 = ne istice)."""
+    out = []
+    for row in connections.family(CONNECTION):
+        try:
+            expires_at = int(connections.secret(row["platform"]).get("expires_at") or 0)
+        except SourceError:
+            expires_at = -1  # ne moze da se procita (promenjen SECRET_KEY)
+        days = None if expires_at <= 0 else (expires_at - time.time()) / 86400
+        out.append({**row, "expires_at": expires_at, "days_left": days, "expired": days is not None and days <= 0})
+    return out
+
+
+def warnings():
+    """Poruke za tim kad nekom tokenu istice rok ili je istekao."""
+    out = []
+    for person in people():
+        days = person["days_left"]
+        if days is None:
+            continue
+        if days <= 0:
+            out.append(f"Meta veza ({person['label']}) je istekla. Neka {person['label']} ponovo poveže svoj nalog na strani Izvor podataka.")
+        elif days <= WARN_DAYS:
+            left = max(1, int(days))
+            out.append(
+                f"Meta veza ({person['label']}) ističe za {left} {'dan' if left == 1 else 'dana'}. "
+                "Obnova je jedan klik na strani Izvor podataka."
+            )
+    return out
+
+
 def prepare():
-    return connections.secret(CONNECTION)["access_token"]
+    """Tokeni svih povezanih ljudi kojima rok nije istekao. Cita bazu, pa se zove u glavnoj niti."""
+    tokens, expired = [], []
+    for person in people():
+        if person["expired"] or person["expires_at"] < 0:
+            expired.append(person["label"])
+            continue
+        tokens.append({"key": person["platform"], "label": person["label"], "token": connections.secret(person["platform"])["access_token"]})
+    if not tokens and not expired:
+        raise NotConnected("Meta Ads još nije povezan.")
+    if not tokens:
+        raise SourceError("Meta veza je istekla (" + ", ".join(expired) + "). Povežite nalog ponovo na strani Izvor podataka.")
+    return tokens
+
+
+def forget():
+    with _owner_lock:
+        _owner.clear()
+
+
+def _as_list(tokens):
+    return [{"key": "", "label": "", "token": tokens}] if isinstance(tokens, str) else tokens
+
+
+def _resolve(tokens, account_id):
+    """Token kojim se cita oglasni nalog: onaj ciji vlasnik ima pristup nalogu."""
+    tokens = _as_list(tokens)
+    if len(tokens) == 1:
+        return tokens[0]["token"]
+    account_id = format_id(account_id)
+    with _owner_lock:
+        known = _owner.get(account_id)
+    for t in tokens:
+        if t["key"] == known:
+            return t["token"]
+    for t in tokens:
+        try:
+            _get(f"{BASE}/act_{account_id}", t["token"], {"fields": "account_id"})
+        except SourceError:
+            continue
+        with _owner_lock:
+            _owner[account_id] = t["key"]
+        return t["token"]
+    raise SourceError("Nijedan povezani Meta nalog više nema pristup ovom oglasnom nalogu.")
+
+
+# ---------------------------------------------------------------- prijava preko Facebook-a
+
+def login_ready():
+    return bool(APP_ID and APP_SECRET)
+
+
+def auth_url(redirect_uri, state):
+    params = {"client_id": APP_ID, "redirect_uri": redirect_uri, "state": state, "response_type": "code"}
+    if LOGIN_CONFIG_ID:
+        params["config_id"] = LOGIN_CONFIG_ID
+    else:
+        params["scope"] = "ads_read"
+    return f"https://www.facebook.com/{API_VERSION}/dialog/oauth?" + urlencode(params)
+
+
+def _public(url, params):
+    """Poziv bez korisnickog tokena (zamena koda, produzenje tokena)."""
+    resp = call("GET", url, params=params)
+    data = body(resp)
+    if resp.status_code != 200 or "error" in data:
+        error = data.get("error", {})
+        raise SourceError(error.get("error_user_msg") or error.get("message") or f"HTTP {resp.status_code}")
+    return data
+
+
+def exchange_code(code, redirect_uri):
+    """Kod sa Facebook-a -> kratkotrajni token."""
+    data = _public(
+        f"{BASE}/oauth/access_token",
+        {"client_id": APP_ID, "client_secret": APP_SECRET, "redirect_uri": redirect_uri, "code": code},
+    )
+    if not data.get("access_token"):
+        raise SourceError("Facebook nije izdao token.")
+    return data["access_token"]
+
+
+def extend(token):
+    """Kratkotrajni token -> token koji traje oko 60 dana. Vraca (token, istice_u)."""
+    data = _public(
+        f"{BASE}/oauth/access_token",
+        {"grant_type": "fb_exchange_token", "client_id": APP_ID, "client_secret": APP_SECRET, "fb_exchange_token": token},
+    )
+    if not data.get("access_token"):
+        raise SourceError("Facebook nije produžio token.")
+    expires_in = int(data.get("expires_in") or 0)
+    return data["access_token"], int(time.time()) + expires_in if expires_in else expiry(data["access_token"])
+
+
+def expiry(token):
+    """Kad token istice (unix vreme), 0 ako ne istice, None ako se ne moze proveriti."""
+    if not login_ready():
+        return None
+    data = _public(f"{BASE}/debug_token", {"input_token": token, "access_token": f"{APP_ID}|{APP_SECRET}"}).get("data", {})
+    return int(data.get("expires_at") or 0)
+
+
+def identity(token):
+    """(id, ime) vlasnika tokena."""
+    data = _get(f"{BASE}/me", token, {"fields": "id,name"})
+    return str(data.get("id", "")), data.get("name") or "Meta nalog"
+
+
+def connect(token, connected_by):
+    """Cuva token (licni ili sistemskog korisnika) kao vezu "meta:<id>". Vraca ime."""
+    person_id, name = identity(token)
+    expires_at = expiry(token) if login_ready() else None
+    # Kratkotrajni token (npr. iz Graph API Explorer-a) se odmah produzava.
+    if login_ready() and expires_at and expires_at - time.time() < 2 * 86400:
+        token, expires_at = extend(token)
+    connections.save(
+        f"{CONNECTION}:{person_id}", name, {"access_token": token, "expires_at": expires_at or 0}, connected_by
+    )
+    forget()
+    return name
 
 
 def _get(url, token, params=None):
@@ -63,22 +234,34 @@ def whoami(token):
     return _get(f"{BASE}/me", token, {"fields": "name"}).get("name", "Meta nalog")
 
 
-def list_accounts(token):
-    rows = _paged(
-        f"{BASE}/me/adaccounts",
-        token,
-        {"fields": "account_id,name,currency,account_status", "limit": 200},
-    )
-    accounts = [
-        {
-            "id": str(row.get("account_id", "")),
-            "name": row.get("name") or str(row.get("account_id", "")),
-            "currency": row.get("currency") or "EUR",
-        }
-        for row in rows
-        if row.get("account_id")
-    ]
-    return sorted(accounts, key=lambda a: a["name"].lower())
+def list_accounts(tokens):
+    """Oglasni nalozi svih povezanih ljudi zajedno. Pamti ciji token vidi koji nalog."""
+    accounts, errors = {}, []
+    for t in _as_list(tokens):
+        try:
+            rows = _paged(
+                f"{BASE}/me/adaccounts",
+                t["token"],
+                {"fields": "account_id,name,currency,account_status", "limit": 200},
+            )
+        except SourceError as exc:
+            errors.append(f"{t['label']}: {exc}" if t["label"] else str(exc))
+            continue
+        for row in rows:
+            account_id = str(row.get("account_id", ""))
+            if not account_id or account_id in accounts:
+                continue
+            accounts[account_id] = {
+                "id": account_id,
+                "name": row.get("name") or account_id,
+                "currency": row.get("currency") or "EUR",
+            }
+            if t["key"]:
+                with _owner_lock:
+                    _owner.setdefault(account_id, t["key"])
+    if errors and not accounts:
+        raise SourceError("; ".join(errors))
+    return sorted(accounts.values(), key=lambda a: a["name"].lower())
 
 
 def _action(actions, *types):
@@ -138,6 +321,7 @@ def _budget(value):
 
 def fetch_campaigns(token, account_id):
     """Cilj i trenutni budzet svake kampanje: {id: {"result", "daily", "lifetime"}}."""
+    token = _resolve(token, account_id)
     rows = _paged(
         f"{BASE}/act_{format_id(account_id)}/campaigns",
         token,
@@ -155,6 +339,7 @@ def fetch_campaigns(token, account_id):
 
 def fetch_daily(token, account_id, start, end):
     """Brojke po kampanji i danu. Klikovi su klikovi na link (ne svi klikovi na objavu)."""
+    token = _resolve(token, account_id)
     campaigns = fetch_campaigns(token, account_id)
     rows = _paged(
         f"{BASE}/act_{format_id(account_id)}/insights",
@@ -224,6 +409,7 @@ def fetch_rankings(token, account_id, start, end, limit=10):
     Meta ih daje samo na nivou oglasa i samo za oglase sa dovoljno prikaza;
     ostali dobijaju UNKNOWN i ne prikazuju se.
     """
+    token = _resolve(token, account_id)
     rows = _paged(
         f"{BASE}/act_{format_id(account_id)}/insights",
         token,
@@ -251,6 +437,7 @@ def fetch_reach(token, account_id, start, end):
     Doseg se ne sabira po danima ni po kampanjama (isti covek moze da vidi vise
     kampanja), pa se za svaki period trazi posebno: za nalog i za kampanje.
     """
+    token = _resolve(token, account_id)
     url = f"{BASE}/act_{format_id(account_id)}/insights"
     time_range = json.dumps({"since": start.isoformat(), "until": end.isoformat()})
     account = _paged(url, token, {"level": "account", "time_range": time_range, "fields": "reach,frequency"})
@@ -271,4 +458,4 @@ def fetch_reach(token, account_id, start, end):
 
 
 def connected():
-    return connections.get(CONNECTION) is not None
+    return bool(connections.family(CONNECTION))

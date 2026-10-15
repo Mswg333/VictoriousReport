@@ -32,6 +32,15 @@ def get(platform):
     )
 
 
+def family(name):
+    """Sve veze jedne platforme koja dozvoljava vise veza: "meta" i "meta:<id>"."""
+    return db.query(
+        "SELECT platform, label, scopes, connected_by, connected_at FROM portal_connections "
+        "WHERE platform = ? OR platform LIKE ? ORDER BY connected_at",
+        (name, name + ":%"),
+    )
+
+
 def secret(platform):
     """Desifrovan token (recnik). Baca NotConnected ako veze nema."""
     row = db.query("SELECT secret_enc FROM portal_connections WHERE platform = ?", (platform,), one=True)

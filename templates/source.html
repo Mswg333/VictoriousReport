@@ -85,23 +85,56 @@
 
     <section class="card stack gap-16">
       <div class="row between gap-12"><h2>Meta Ads</h2>{{ pill(meta) }}</div>
-      {{ state(meta, "Oglasnih naloga") }}
-      <form class="stack gap-8" method="post" action="{{ url_for('meta_connect') }}">
+      <p class="muted small">Svako iz tima može da poveže svoj Facebook nalog. Portal spaja oglasne naloge svih povezanih i za svaki nalog koristi vezu onoga ko ima pristup.</p>
+      {% for p in meta_people %}
+      <div class="status-row">
+        <div>
+          <strong>{{ p.label }}</strong>
+          <div class="muted small">Povezao {{ p.connected_by }}, {{ p.connected_at[:10] }}</div>
+          <div class="small {% if p.expired or (p.days_left is not none and p.days_left <= meta_warn_days) %}problem{% else %}muted{% endif %}">
+            {% if p.expires_at < 0 %}Veza ne može da se pročita. Povežite ponovo.
+            {% elif p.days_left is none %}Veza ne ističe.
+            {% elif p.expired %}Veza je istekla. Povežite ponovo.
+            {% else %}Veza ističe za {{ p.days_left|int if p.days_left >= 1 else 'manje od 1' }} {{ 'dan' if p.days_left|int == 1 else 'dana' }}.{% endif %}
+          </div>
+        </div>
+        <form method="post" action="{{ url_for('data_source_disconnect', platform=p.platform) }}" onsubmit="return confirm('Prekinuti ovu Meta vezu? Nalozi koje vidi samo ova osoba neće raditi u izveštajima.')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn danger" type="submit">Prekini</button>
+        </form>
+      </div>
+      {% endfor %}
+      {% if meta.error %}<p class="problem small">Provera nije prošla: {{ meta.error }}</p>
+      {% elif meta.accounts is not none %}<p class="muted small">Oglasnih naloga koje portal vidi: {{ meta.accounts }}.</p>{% endif %}
+
+      {% if meta_login %}
+      <form method="post" action="{{ url_for('meta_start') }}">
         <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <label class="field" for="meta_token_input">Token sistemskog korisnika</label>
-        <input id="meta_token_input" name="token" type="password" autocomplete="off" required>
-        <div><button class="btn primary" type="submit">{% if meta.connected %}Zameni token{% else %}Poveži Meta Ads{% endif %}</button></div>
+        <button class="btn primary" type="submit">Poveži svoj Facebook nalog</button>
       </form>
+      <p class="muted small">Ako je vaš nalog već povezan, isto dugme obnavlja vezu na još 60 dana. Portal upozorava tim {{ meta_warn_days }} dana pre isteka.</p>
+      {% else %}
+      <p class="notice small">Za prijavu preko Facebook-a upišite <code>META_APP_ID</code> i <code>META_APP_SECRET</code> u podešavanja aplikacije. Do tada token možete nalepiti ručno.</p>
+      {% endif %}
+
       <details class="small">
-        <summary>Kako se dobija token</summary>
-        <ol class="steps muted" style="margin-top: 8px">
-          <li>Na developers.facebook.com napravite aplikaciju i dodajte joj proizvod Marketing API.</li>
-          <li>U Business Manager-u otvorite Business settings, Users, System users i napravite sistemskog korisnika.</li>
-          <li>Dodelite mu oglasne naloge klijenata, sa pravom pregleda.</li>
-          <li>Kliknite Generate token, izaberite aplikaciju i dozvolu <code>ads_read</code>, pa token nalepite ovde.</li>
-        </ol>
+        <summary>Podešavanje i ručni unos tokena</summary>
+        <div class="stack gap-12" style="margin-top: 8px">
+          <ol class="steps muted">
+            <li>Na developers.facebook.com otvorite aplikaciju portala. U <strong>App settings → Basic</strong> su App ID i App secret: upišite ih kao <code>META_APP_ID</code> i <code>META_APP_SECRET</code>.</li>
+            <li>Dodajte proizvod <strong>Facebook Login</strong> (ili <strong>Facebook Login for Business</strong>) i kao Valid OAuth Redirect URI upišite: <code>{{ callbacks.meta }}</code></li>
+            <li>Ako je aplikacija tipa Business, u Facebook Login for Business napravite konfiguraciju sa dozvolom <code>ads_read</code> i njen ID upišite kao <code>META_LOGIN_CONFIG_ID</code>.</li>
+            <li>Dok je aplikacija u razvojnom režimu, svako ko se povezuje mora imati ulogu na njoj: <strong>App roles → Roles</strong>, dodajte kolege kao Developer ili Tester.</li>
+          </ol>
+          <form class="stack gap-8" method="post" action="{{ url_for('meta_connect') }}">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <label class="field" for="meta_token_input">Token (lični iz Graph API Explorer-a ili sistemskog korisnika)</label>
+            <input id="meta_token_input" name="token" type="password" autocomplete="off" required>
+            <div><button class="btn" type="submit">Sačuvaj token</button></div>
+          </form>
+        </div>
       </details>
-      <p class="muted small">Token se čuva šifrovan. Posle čuvanja više se ne prikazuje.</p>
+      <p class="muted small">Tokeni se čuvaju šifrovani i više se ne prikazuju.</p>
     </section>
 
     <section class="card stack gap-16">

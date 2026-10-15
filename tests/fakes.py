@@ -11,6 +11,7 @@ isto), da ocekivani zbirovi mogu da se izracunaju napamet:
 """
 import io
 import json
+import time
 import re
 import zipfile
 from datetime import date, timedelta
@@ -57,7 +58,11 @@ class FakeNet:
         self.tiktok_ranges = []
         self.ranges = []           # (kanal, od, do) za svaki zahtev za dnevne brojke
         self.reach_calls = []
-        self.ranking_calls = 0      # (nivo, od) za svaki zahtev za doseg (Meta)
+        self.ranking_calls = 0
+        self.ga4_behavior_calls = 0
+        self.ga4_no_ecommerce = False
+        self.meta_used = []        # (token, putanja) za svaki Meta poziv
+        self.meta_extended = []    # tokeni koji su produzeni      # (nivo, od) za svaki zahtev za doseg (Meta)
         self.ms_range = None
 
     def count(self, part):
@@ -205,6 +210,8 @@ class FakeNet:
             )
         assert url.endswith("/properties/555000111:batchRunReports"), url
         reports = payload["requests"]
+        if reports[0].get("dimensions") == [{"name": "eventName"}]:
+            return self._analytics_behavior(reports)
         assert len(reports) == 4 and reports[0]["dateRanges"][0]["endDate"] <= YESTERDAY.isoformat()
         start = date.fromisoformat(reports[0]["dateRanges"][0]["startDate"])
         end = date.fromisoformat(reports[0]["dateRanges"][0]["endDate"])
@@ -226,11 +233,57 @@ class FakeNet:
             },
         )
 
+    def _analytics_behavior(self, reports):
+        """Ponasanje posetilaca: put do kupovine, proizvodi, dogadjaji, ulazne strane."""
+        self.ga4_behavior_calls += 1
+        assert len(reports) == 4
+        assert reports[0]["dimensionFilter"]["filter"]["inListFilter"]["values"][-1] == "purchase"
+        assert [m["name"] for m in reports[1]["metrics"]] == ["itemsViewed", "itemsAddedToCart", "itemsPurchased"]
+        assert reports[3]["dimensions"] == [{"name": "landingPage"}]
+
+        def row(label, *values):
+            return {"dimensionValues": [{"value": label}], "metricValues": [{"value": str(v)} for v in values]}
+
+        funnel = [] if self.ga4_no_ecommerce else [
+            row("view_item", 400), row("add_to_cart", 120), row("begin_checkout", 60),
+            row("add_payment_info", 40), row("purchase", 25),
+        ]
+        products = [] if self.ga4_no_ecommerce else [
+            row("Kuhinja Hrast", 300, 90, 20), row("(not set)", 50, 1, 0), row("Sto Bor", 100, 2, 0),
+        ]
+        return FakeResponse(200, {"reports": [
+            {"rows": funnel},
+            {"rows": products},
+            {"rows": [row("page_view", 5000, 900), row("scroll", 900, 500), row("click", 340, 200),
+                      row("form_submit", 45, 40), row("poziv_telefon", 30, 28)]},
+            {"rows": [row("/", 600, "0.35"), row("/akcija", 200, "0.72"), row("/blog/stari-tekst", 5, "1")]},
+        ]})
+
     # ------------------------------------------------------------ Meta
 
     def _meta(self, url, headers, params):
         path, query = urlparse(url).path, parse_qs(urlparse(url).query)
+        # Pozivi bez korisnickog tokena: prijava preko Facebook-a i provera roka.
+        if path.endswith("/oauth/access_token"):
+            assert params["client_id"] == "meta-app" and params["client_secret"] == "meta-secret"
+            if params.get("code"):
+                if params["code"] != "fb-code":
+                    return FakeResponse(400, {"error": {"message": "This authorization code has expired.", "code": 100}})
+                return FakeResponse(200, {"access_token": "short-2", "token_type": "bearer"})
+            assert params["grant_type"] == "fb_exchange_token"
+            self.meta_extended.append(params["fb_exchange_token"])
+            assert params["fb_exchange_token"] == "short-2"
+            return FakeResponse(200, {"access_token": "meta-token-2", "token_type": "bearer", "expires_in": 5184000})
+        if path.endswith("/debug_token"):
+            assert params["access_token"] == "meta-app|meta-secret"
+            expires = 0 if params["input_token"] == "meta-token" else int(time.time()) + 3600
+            if params["input_token"] == "meta-token-2":
+                expires = int(time.time()) + 5184000
+            return FakeResponse(200, {"data": {"is_valid": True, "expires_at": expires}})
         token = headers["Authorization"].split()[1]
+        self.meta_used.append((token, path))
+        if token == "meta-token-2" and "meta" not in self.down:
+            return self._meta_colleague(path, params)
         if token != "meta-token" or "meta" in self.down:
             return FakeResponse(400, {"error": {"message": "Invalid OAuth access token.", "code": 190}})
         assert path.startswith("/" + meta_ads.API_VERSION + "/"), path
@@ -241,6 +294,10 @@ class FakeNet:
                 200,
                 {"data": [{"id": "act_9001", "account_id": "9001", "name": "Hrast Meta", "currency": "EUR", "account_status": 1}]},
             )
+        if "/act_9002" in path:  # kolegin nalog: ovaj token ga ne vidi
+            return FakeResponse(400, {"error": {"message": "Unsupported get request.", "code": 100}})
+        if path.endswith("/act_9001"):
+            return FakeResponse(200, {"account_id": "9001", "id": "act_9001"})
         if path.endswith("/act_9001/campaigns"):
             assert "objective" in params["fields"]
             return FakeResponse(
@@ -298,6 +355,28 @@ class FakeNet:
             for day in days
         ]
         return FakeResponse(200, {"data": rows, "paging": paging})
+
+    def _meta_colleague(self, path, params):
+        """Drugi clan tima: vidi samo svoj oglasni nalog 9002."""
+        if path.endswith("/me"):
+            return FakeResponse(200, {"id": "777", "name": "Kolega Petar"})
+        if path.endswith("/me/adaccounts"):
+            return FakeResponse(200, {"data": [
+                {"id": "act_9002", "account_id": "9002", "name": "Druga firma Meta", "currency": "EUR", "account_status": 1}
+            ]})
+        if path.endswith("/act_9002"):
+            return FakeResponse(200, {"account_id": "9002", "id": "act_9002"})
+        if path.endswith("/act_9002/campaigns"):
+            return FakeResponse(200, {"data": [{"id": "91", "objective": "OUTCOME_TRAFFIC"}]})
+        if path.endswith("/act_9002/insights"):
+            time_range = json.loads(params["time_range"])
+            since, until = date.fromisoformat(time_range["since"]), date.fromisoformat(time_range["until"])
+            return FakeResponse(200, {"data": [
+                {"campaign_id": "91", "campaign_name": "Saobraćaj: prodavnica", "date_start": day, "date_stop": day,
+                 "spend": "1.00", "impressions": "100", "inline_link_clicks": "4", "clicks": "6", "actions": []}
+                for day in days_between(since, until)
+            ]})
+        return FakeResponse(400, {"error": {"message": "Unsupported get request.", "code": 100}})
 
     # ------------------------------------------------------------ Microsoft
 

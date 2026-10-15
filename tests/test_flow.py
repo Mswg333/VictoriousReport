@@ -33,6 +33,9 @@ os.environ.update(
     MICROSOFT_ADS_DEVELOPER_TOKEN="ms-dev-token",
     TIKTOK_APP_ID="tt-app",
     TIKTOK_APP_SECRET="tt-secret",
+    META_APP_ID="meta-app",
+    META_APP_SECRET="meta-secret",
+    META_LOGIN_CONFIG_ID="",
 )
 
 import app as portal  # noqa: E402
@@ -41,7 +44,7 @@ import db  # noqa: E402
 import fmt  # noqa: E402
 import google_auth  # noqa: E402
 import platforms  # noqa: E402
-from platforms import google_ads  # noqa: E402
+from platforms import google_ads, meta_ads  # noqa: E402
 from tests.fakes import YESTERDAY, install  # noqa: E402
 
 assert not db.IS_PG, "test radi samo nad privremenom SQLite bazom"
@@ -108,10 +111,57 @@ resp = team.post("/tim/izvor/meta/token", data={"_csrf": token, "token": "los-to
 assert "Meta nije prihvatila token: Invalid OAuth access token." in resp.text
 resp = team.post("/tim/izvor/meta/token", data={"_csrf": token, "token": " meta-token "}, follow_redirects=True)
 plain = text(resp.text)
-assert "Meta Ads je povezan." in plain and "Portal sistemski korisnik" in plain
+assert "Meta Ads je povezan (Portal sistemski korisnik)." in plain and "Veza ne ističe." in plain
 assert "Oglasnih naloga koje portal vidi: 1." in plain and "meta-token" not in resp.text
 with flask_app.app_context():
     assert "meta-token" not in json.dumps(db.query("SELECT * FROM portal_connections"))
+
+# 4b. Kolega povezuje svoj Facebook nalog: portal spaja naloge obojice i za svaki koristi pravi token.
+resp = team.post("/auth/meta/start", data={"_csrf": token})
+fb = parse_qs(urlparse(resp.location).query)
+assert resp.location.startswith(f"https://www.facebook.com/{meta_ads.API_VERSION}/dialog/oauth?")
+assert fb["client_id"] == ["meta-app"] and fb["scope"] == ["ads_read"]
+assert fb["redirect_uri"] == ["http://localhost/auth/meta/callback"]
+resp = team.get("/auth/meta/callback?state=pogresan&code=fb-code", follow_redirects=True)
+assert "Povezivanje je isteklo" in resp.text
+resp = team.post("/auth/meta/start", data={"_csrf": token})
+state = parse_qs(urlparse(resp.location).query)["state"][0]
+resp = team.get(f"/auth/meta/callback?state={state}&code=fb-code", follow_redirects=True)
+plain = text(resp.text)
+assert "Meta Ads je povezan (Kolega Petar)." in plain, plain[:500]
+assert fake.meta_extended == ["short-2"], "kratkotrajni token se odmah produzava"
+assert "Veza ističe za 59 dana." in plain or "Veza ističe za 60 dana." in plain, plain
+assert "Veza ne ističe." in plain and "Oglasnih naloga koje portal vidi: 2." in plain, plain
+with flask_app.app_context():
+    assert "meta-token-2" not in json.dumps(db.query("SELECT * FROM portal_connections"))
+    names = [a["name"] for a in platforms.accounts(meta_ads)]
+    assert names == ["Druga firma Meta", "Hrast Meta"], names
+    meta_ads.forget()  # kao posle restarta: portal sam nalazi ciji token vidi nalog
+    fake.meta_used.clear()
+    payload, error = platforms.daily("meta", "9002", *platforms.default_range())
+    assert error is None and payload["rows"][0][2] == "Saobraćaj: prodavnica", error
+    assert all(tok == "meta-token-2" for tok, p in fake.meta_used if "9002/" in p), fake.meta_used
+    payload, error = platforms.daily("meta", "9001", *platforms.default_range())
+    assert error is None and all(tok == "meta-token" for tok, p in fake.meta_used if "9001/" in p)
+    platforms.clear("meta", "9002"); platforms.clear("meta", "9001")
+    # Rok isticе: upozorenje za tim; istekao token se ne koristi.
+    secret = connections.secret("meta:777")
+    connections.update_secret("meta:777", {**secret, "expires_at": int(time.time()) + 3 * 86400 + 60})
+plain = text(team.get("/tim").text)
+assert "Meta veza (Kolega Petar) ističe za 3 dana." in plain, plain[:400]
+with flask_app.app_context():
+    connections.update_secret("meta:777", {**secret, "expires_at": int(time.time()) - 10})
+    meta_ads.forget()
+    assert [t["label"] for t in meta_ads.prepare()] == ["Portal sistemski korisnik"]
+    payload, error = platforms.daily("meta", "9002", *platforms.default_range())
+    assert payload is None and "Unsupported get request." in error, error
+    platforms.clear("meta", "9002")
+assert "Meta veza (Kolega Petar) je istekla." in text(team.get("/tim/izvor").text)
+# Prekid veze jedne osobe ne dira ostale.
+resp = team.post("/tim/izvor/meta:777/prekini", data={"_csrf": token}, follow_redirects=True)
+plain = text(resp.text)
+assert "Kolega Petar" not in plain and "Portal sistemski korisnik" in plain and "Oglasnih naloga koje portal vidi: 1." in plain
+assert team.post("/tim/izvor/meta:999/prekini", data={"_csrf": token}).status_code == 404
 
 # 5. Microsoft: OAuth, lista aktivnih naloga, cuvanje novog refresh tokena.
 resp = team.post("/auth/microsoft/start", data={"_csrf": token})
@@ -342,6 +392,38 @@ assert "Slika: malo prikaza" not in plain, "oglasi bez ocene se ne prikazuju"
 calls = fake.ranking_calls
 visitor.get(f"{path}?kanal=meta")
 assert fake.ranking_calls == calls == 1, "ocene se pamte"
+
+# 12f. Analytics: gde kupci klikcu i gde odustaju.
+team.post("/tim/klijent/1", data={**SETTINGS, "lay_ga4": "1", "m_ga4": ["sessions"], "s_ga4": ["chart"]})
+visitor.get(f"{path}?kanal=ga4")
+assert fake.ga4_behavior_calls == 0, "ponasanje se ne cita dok nije ukljuceno"
+team.post("/tim/klijent/1", data={
+    **SETTINGS, "lay_ga4": "1", "m_ga4": ["sessions"], "s_ga4": ["funnel", "products", "events", "landing"],
+})
+site = visitor.get(f"{path}?kanal=ga4").text
+plain = text(site)
+for expected in (
+    "Put do kupovine",
+    "Najviše ljudi odustaje između koraka „Pogledali proizvod“ i „Dodali u korpu“: od 400 njih 280 (70 %) ne nastavi dalje.",
+    "Posetili sajt", "Započeli kupovinu", "Uneli podatke za plaćanje", "Kupili", "nastavilo 30 %, odustalo 70 %",
+    "Kuhinja Hrast", "30 %", "Sto Bor", "2 %",
+    "Šta posetioci rade na sajtu", "Klik na link ka drugom sajtu", "340", "200 posetilaca", "Poslali formu", "poziv_telefon",
+    "Najviše ljudi odmah ode sa strane /akcija: 72 % poseta završi se bez ikakve aktivnosti.", "/blog/stari-tekst",
+):
+    assert expected in plain, expected
+assert "Uneli podatke za dostavu" not in plain, "korak koji sajt ne salje se izostavlja"
+assert "(not set)" not in plain and "page_view" not in plain
+assert site.count('class="funnel-bar"') == 6
+fake.ga4_no_ecommerce = True
+with flask_app.app_context():
+    platforms.clear("ga4", "555000111")
+plain = text(visitor.get(f"{path}?kanal=ga4").text)
+assert "Put do kupovine" not in plain and "Šta posetioci rade na sajtu" in plain
+preview = text(team.get("/tim/klijent/1/pregled?kanal=ga4").text)
+assert "Put do kupovine nije prikazan: Analytics ne beleži e-commerce događaje" in preview
+fake.ga4_no_ecommerce = False
+with flask_app.app_context():
+    platforms.clear("ga4", "555000111")
 
 # Povratak na podrazumevano za dalje provere.
 DEFAULT_ADS = {"m": ["spend", "impressions", "clicks", "cpc", "conversions", "cpa"], "s": ["chart", "campaigns"]}

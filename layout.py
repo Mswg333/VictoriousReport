@@ -75,7 +75,12 @@ SITE_SECTIONS = [
     ("chart", "Grafikon po danima"),
     ("channels", "Odakle dolaze posete"),
     ("pages", "Najgledanije strane"),
+    ("funnel", "Put do kupovine: gde kupci odustaju"),
+    ("products", "Proizvodi: pregledi, korpa, kupovine"),
+    ("events", "Na šta posetioci klikću (događaji)"),
+    ("landing", "Ulazne strane: koliko ljudi odmah ode"),
 ]
+BEHAVIOR_SECTIONS = {"funnel", "products", "events", "landing"}
 SITE_CHART = [("sessions", "Posete"), ("users", "Posetioci"), ("key_events", "Konverzije")]
 
 

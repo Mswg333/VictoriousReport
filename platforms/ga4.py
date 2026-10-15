@@ -140,6 +140,134 @@ def report(property_id, start, end):
     return cached(f"ga4:{property_id}:v2:{start.isoformat()}:{end.isoformat()}", data_ttl(end), fetch)
 
 
+# Koraci puta do kupovine (standardni GA4 e-commerce dogadjaji), redom.
+FUNNEL = [
+    ("view_item", "Pogledali proizvod"),
+    ("add_to_cart", "Dodali u korpu"),
+    ("begin_checkout", "Započeli kupovinu"),
+    ("add_shipping_info", "Uneli podatke za dostavu"),
+    ("add_payment_info", "Uneli podatke za plaćanje"),
+    ("purchase", "Kupili"),
+]
+
+# Dogadjaji koje GA4 belezi sam za svaku posetu; ne govore na sta ljudi klikcu.
+ROUTINE_EVENTS = {"page_view", "session_start", "first_visit", "user_engagement"}
+
+# GA4 nazivi dogadjaja, prevedeni za klijenta. Nepoznati (sopstveni) ostaju kakvi jesu.
+EVENTS = {
+    "click": "Klik na link ka drugom sajtu",
+    "scroll": "Pomerili stranu skoro do kraja",
+    "file_download": "Preuzeli fajl",
+    "form_start": "Počeli da popunjavaju formu",
+    "form_submit": "Poslali formu",
+    "view_search_results": "Pretraživali sajt",
+    "video_start": "Pokrenuli video",
+    "video_progress": "Gledali video",
+    "video_complete": "Odgledali video do kraja",
+    "view_item_list": "Pregledali listu proizvoda",
+    "select_item": "Kliknuli na proizvod u listi",
+    "view_item": "Pogledali proizvod",
+    "add_to_cart": "Dodali u korpu",
+    "remove_from_cart": "Uklonili iz korpe",
+    "view_cart": "Pogledali korpu",
+    "add_to_wishlist": "Dodali u listu želja",
+    "begin_checkout": "Započeli kupovinu",
+    "add_shipping_info": "Uneli podatke za dostavu",
+    "add_payment_info": "Uneli podatke za plaćanje",
+    "purchase": "Kupili",
+    "refund": "Vraćen novac",
+    "view_promotion": "Videli promociju",
+    "select_promotion": "Kliknuli na promociju",
+    "generate_lead": "Ostavili upit",
+    "sign_up": "Registrovali se",
+    "login": "Prijavili se",
+    "share": "Podelili sadržaj",
+    "search": "Pretraživali sajt",
+}
+
+
+def behavior(property_id, start, end):
+    """Ponasanje posetilaca: put do kupovine, proizvodi, dogadjaji i ulazne strane."""
+    property_id = normalize_id(property_id)
+    date_range = [{"startDate": start.isoformat(), "endDate": end.isoformat()}]
+
+    def fetch():
+        data = _request(
+            "POST",
+            f"{DATA_BASE}/properties/{property_id}:batchRunReports",
+            _token(),
+            json={
+                "requests": [
+                    {
+                        "dateRanges": date_range,
+                        "dimensions": [{"name": "eventName"}],
+                        "metrics": [{"name": "totalUsers"}],
+                        "dimensionFilter": {
+                            "filter": {
+                                "fieldName": "eventName",
+                                "inListFilter": {"values": [name for name, _ in FUNNEL]},
+                            }
+                        },
+                    },
+                    {
+                        "dateRanges": date_range,
+                        "dimensions": [{"name": "itemName"}],
+                        "metrics": [{"name": "itemsViewed"}, {"name": "itemsAddedToCart"}, {"name": "itemsPurchased"}],
+                        "orderBys": [{"metric": {"metricName": "itemsViewed"}, "desc": True}],
+                        "limit": 10,
+                    },
+                    {
+                        "dateRanges": date_range,
+                        "dimensions": [{"name": "eventName"}],
+                        "metrics": [{"name": "eventCount"}, {"name": "totalUsers"}],
+                        "orderBys": [{"metric": {"metricName": "eventCount"}, "desc": True}],
+                        "limit": 30,
+                    },
+                    {
+                        "dateRanges": date_range,
+                        "dimensions": [{"name": "landingPage"}],
+                        "metrics": [{"name": "sessions"}, {"name": "bounceRate"}],
+                        "orderBys": [{"metric": {"metricName": "sessions"}, "desc": True}],
+                        "limit": 8,
+                    },
+                ]
+            },
+        )
+        reports = data.get("reports", []) + [{}, {}, {}, {}]
+
+        def rows(index):
+            return reports[index].get("rows", [])
+
+        def number(row, index=0):
+            values = row.get("metricValues", [])
+            return float(values[index].get("value", 0)) if len(values) > index else 0.0
+
+        def label(row):
+            values = row.get("dimensionValues", [])
+            return values[0].get("value", "") if values else ""
+
+        return {
+            "funnel": {label(r): int(number(r)) for r in rows(0)},
+            "products": [
+                {"name": label(r), "views": int(number(r, 0)), "carts": int(number(r, 1)), "purchases": int(number(r, 2))}
+                for r in rows(1)
+                if label(r) and label(r) != "(not set)"
+            ],
+            "events": [
+                {"name": label(r), "count": int(number(r, 0)), "users": int(number(r, 1))}
+                for r in rows(2)
+                if label(r) not in ROUTINE_EVENTS
+            ],
+            "landing": [
+                {"path": label(r), "sessions": int(number(r, 0)), "bounce": number(r, 1)}
+                for r in rows(3)
+                if label(r) and label(r) != "(not set)"
+            ],
+        }
+
+    return cached(f"ga4:{property_id}:behavior:{start.isoformat()}:{end.isoformat()}", data_ttl(end), fetch)
+
+
 def list_properties():
     """GA4 property-ji koje povezani nalog vidi: [{"id", "name"}].
 

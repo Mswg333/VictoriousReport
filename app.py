@@ -137,7 +137,14 @@ def check_csrf():
 
 @app.context_processor
 def inject_helpers():
-    return {"csrf_token": csrf_token, "team_user": current_user(), "periods": PERIODS}
+    user = current_user()
+    return {
+        "csrf_token": csrf_token,
+        "team_user": user,
+        "periods": PERIODS,
+        # Upozorenja o vezama koje isticu vidi samo tim.
+        "team_warnings": meta_ads.warnings() if user else [],
+    }
 
 
 # ---------------------------------------------------------------- tim: prijava
@@ -321,12 +328,16 @@ def data_source():
         mcc_id=google_ads.MCC_ID,
         only_ids=google_ads.ONLY_IDS,
         meta=channel_status(meta_ads),
+        meta_people=meta_ads.people(),
+        meta_login=meta_ads.login_ready(),
+        meta_warn_days=meta_ads.WARN_DAYS,
         microsoft=channel_status(microsoft_ads),
         tiktok=channel_status(tiktok_ads),
         callbacks={
             "google": callback_url(),
             "microsoft": callback_url("microsoft_callback"),
             "tiktok": callback_url("tiktok_callback"),
+            "meta": callback_url("meta_callback"),
         },
         domain=google_auth.ALLOWED_DOMAIN,
         cache_hours=base.DATA_TTL // 3600,
@@ -338,7 +349,14 @@ def data_source():
 def data_source_disconnect(platform):
     if platform == google_auth.PLATFORM:
         google_auth.remove_connection()
-    elif platform in (meta_ads.CONNECTION, microsoft_ads.CONNECTION, tiktok_ads.CONNECTION):
+    elif platform == meta_ads.CONNECTION:  # sve Meta veze
+        for person in meta_ads.people():
+            connections.remove(person["platform"])
+        meta_ads.forget()
+    elif platform.startswith(meta_ads.CONNECTION + ":") and connections.get(platform):  # veza jedne osobe
+        connections.remove(platform)
+        meta_ads.forget()
+    elif platform in (microsoft_ads.CONNECTION, tiktok_ads.CONNECTION):
         connections.remove(platform)
         microsoft_ads.forget_token()
     else:
@@ -364,14 +382,45 @@ def meta_connect():
         flash("Upišite token sistemskog korisnika.", "error")
         return redirect(url_for("data_source"))
     try:
-        label = meta_ads.whoami(token)
         meta_ads.list_accounts(token)  # proverava da token ima dozvolu ads_read
+        label = meta_ads.connect(token, current_user()["email"])
     except SourceError as exc:
         flash(f"Meta nije prihvatila token: {exc}", "error")
         return redirect(url_for("data_source"))
-    connections.save(meta_ads.CONNECTION, label, {"access_token": token}, current_user()["email"])
     base.cache_clear()
-    flash("Meta Ads je povezan.", "ok")
+    flash(f"Meta Ads je povezan ({label}).", "ok")
+    return redirect(url_for("data_source"))
+
+
+@app.post("/auth/meta/start")
+@team_required
+def meta_start():
+    if not meta_ads.login_ready():
+        flash("Prijava preko Facebook-a još nije podešena (META_APP_ID i META_APP_SECRET).", "error")
+        return redirect(url_for("data_source"))
+    state = new_state("oauth_meta")
+    return redirect(meta_ads.auth_url(callback_url("meta_callback"), state))
+
+
+@app.get("/auth/meta/callback")
+@team_required
+def meta_callback():
+    pending = take_state("oauth_meta", request.args.get("state", ""))
+    code = request.args.get("code", "")
+    if request.args.get("error"):
+        flash("Povezivanje Facebook naloga je otkazano.", "error")
+    elif not pending or not code:
+        flash("Povezivanje je isteklo. Pokušajte ponovo.", "error")
+    else:
+        try:
+            short = meta_ads.exchange_code(code, callback_url("meta_callback"))
+            token, _ = meta_ads.extend(short)
+            meta_ads.list_accounts(token)  # proverava dozvolu ads_read
+            label = meta_ads.connect(token, current_user()["email"])
+            base.cache_clear()
+            flash(f"Meta Ads je povezan ({label}). Veza traje oko 60 dana; portal će vas upozoriti pre isteka.", "ok")
+        except SourceError as exc:
+            flash(f"Meta Ads nije povezan: {exc}", "error")
     return redirect(url_for("data_source"))
 
 

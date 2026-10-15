@@ -22,6 +22,9 @@
   </div>
 </header>
 <main class="page stack gap-24">
+  {% for warning in team_warnings %}
+  <p class="flash error" role="alert">{{ warning }} <a href="{{ url_for('data_source') }}">Izvor podataka</a></p>
+  {% endfor %}
   {% for category, message in get_flashed_messages(with_categories=true) %}
   <p class="flash{% if category == 'error' %} error{% endif %}" role="{% if category == 'error' %}alert{% else %}status{% endif %}">{{ message }}</p>
   {% endfor %}
