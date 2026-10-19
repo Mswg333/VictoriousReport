@@ -59,6 +59,9 @@ class FakeNet:
         self.ranges = []           # (kanal, od, do) za svaki zahtev za dnevne brojke
         self.reach_calls = []
         self.ranking_calls = 0
+        self.meta_max_days = 0     # Meta odbija zahteve duze od ovoliko dana (0 = ne odbija)
+        self.meta_refused = 0
+        self.slow = {}             # kanal -> sekunde kasnjenja odgovora
         self.ga4_behavior_calls = 0
         self.ga4_no_ecommerce = False
         self.meta_used = []        # (token, putanja) za svaki Meta poziv
@@ -87,6 +90,7 @@ class FakeNet:
         if host == "download.example.microsoft.test":
             return self._microsoft_download()
         if host == "business-api.tiktok.com":
+            time.sleep(self.slow.get("tiktok", 0))
             return self._tiktok(method, url, headers, params, json)
         raise AssertionError(f"neocekivan poziv: {method} {url}")
 
@@ -327,6 +331,10 @@ class FakeNet:
             time_range = json.loads(params["time_range"])
             since, until = date.fromisoformat(time_range["since"]), date.fromisoformat(time_range["until"])
             assert until <= YESTERDAY
+            if self.meta_max_days and (until - since).days + 1 > self.meta_max_days:
+                self.meta_refused += 1
+                return FakeResponse(500, {"error": {
+                    "message": "Please reduce the amount of data you're asking for, then retry your request", "code": 1}})
             self.ranges.append(("meta", since, until))
             all_days = days_between(since, until)
             days = all_days[: len(all_days) // 2]

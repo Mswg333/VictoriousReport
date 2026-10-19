@@ -1,8 +1,11 @@
+# tajne: nikad u git
 .env
 .secret_key
 *.pem
 client_secret_*.json
 victorious-portal-*.json
+
+# lokalna baza i Python
 portal.db
 portal.db.*
 __pycache__/

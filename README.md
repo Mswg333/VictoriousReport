@@ -207,6 +207,13 @@ Napomene:
 ## Kako se računaju brojke
 
 - Svi izveštaji prikazuju stanje zaključno sa jučerašnjim danom.
+- Strana nikad ne čeka platforme duže od oko 20 sekundi. Ono što ne stigne
+  učitava se dalje u pozadini, a strana kaže „Podaci se još učitavaju.
+  Osvežite stranu za minut.“ Isti nalog se ne učitava dva puta istovremeno.
+- Server radi sa više niti (`gunicorn.conf.py`), pa spora strana ne blokira
+  ostale korisnike.
+- Meta podatke za period čita u delovima od 15 dana; ako Meta i dalje odgovori
+  „Please reduce the amount of data…“, deo se deli na pola.
 - Brojke se pamte 6 sati (tabela `portal_cache`), da se strane otvaraju brzo i
   da se ne troše dnevna ograničenja platformi. Dugme "Osveži podatke" briše
   zapamćeno. Ako platforma privremeno ne radi, prikazuju se poslednji zapamćeni

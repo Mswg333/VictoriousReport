@@ -8,6 +8,7 @@ import json
 import os
 import threading
 import time
+from datetime import timedelta
 from urllib.parse import urlencode
 
 import connections
@@ -337,21 +338,44 @@ def fetch_campaigns(token, account_id):
     }
 
 
+# Meta odbija prevelike zahteve ("Please reduce the amount of data..."), pa se
+# period cita u delovima; deo koji je i dalje prevelik deli se na pola.
+CHUNK_DAYS = 15
+TOO_MUCH_DATA = ("reduce the amount of data", "please reduce")
+
+
+def _daily_rows(token, account_id, start, end):
+    try:
+        return _paged(
+            f"{BASE}/act_{format_id(account_id)}/insights",
+            token,
+            {
+                "level": "campaign",
+                "time_increment": 1,
+                "time_range": json.dumps({"since": start.isoformat(), "until": end.isoformat()}),
+                "fields": "campaign_id,campaign_name,spend,impressions,inline_link_clicks,clicks,actions,action_values",
+                "limit": 200,
+            },
+        )
+    except SourceError as exc:
+        if start >= end or not any(t in str(exc).lower() for t in TOO_MUCH_DATA):
+            raise
+        middle = start + timedelta(days=(end - start).days // 2)
+        return _daily_rows(token, account_id, start, middle) + _daily_rows(
+            token, account_id, middle + timedelta(days=1), end
+        )
+
+
 def fetch_daily(token, account_id, start, end):
     """Brojke po kampanji i danu. Klikovi su klikovi na link (ne svi klikovi na objavu)."""
     token = _resolve(token, account_id)
     campaigns = fetch_campaigns(token, account_id)
-    rows = _paged(
-        f"{BASE}/act_{format_id(account_id)}/insights",
-        token,
-        {
-            "level": "campaign",
-            "time_increment": 1,
-            "time_range": json.dumps({"since": start.isoformat(), "until": end.isoformat()}),
-            "fields": "campaign_id,campaign_name,spend,impressions,inline_link_clicks,clicks,actions,action_values",
-            "limit": 500,
-        },
-    )
+    rows = []
+    chunk_start = start
+    while chunk_start <= end:
+        chunk_end = min(end, chunk_start + timedelta(days=CHUNK_DAYS - 1))
+        rows.extend(_daily_rows(token, account_id, chunk_start, chunk_end))
+        chunk_start = chunk_end + timedelta(days=1)
     out = []
     for row in rows:
         day = row.get("date_start")

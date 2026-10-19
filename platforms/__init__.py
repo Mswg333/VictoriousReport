@@ -16,8 +16,10 @@ Svaki kanal je jedan modul sa istim skupom funkcija:
 Ovde su radnje koje su iste za sve kanale: kes, osvezavanje vise naloga
 odjednom i sabiranje brojki za izabrani period.
 """
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait as wait_futures
 from datetime import date, timedelta
 
 from platforms import base, ga4, google_ads, meta_ads, microsoft_ads, tiktok_ads
@@ -78,33 +80,57 @@ def _store(data_key, error_key, payload):
     base.cache_delete(error_key)
 
 
-def daily(platform, account_id, start, end, fetch=True):
-    """Brojke po kampanji i danu za period. Vraca (podaci, greska).
+# Strana nikad ne ceka platforme duze od WAIT_SECONDS. Sta ne stigne, ucitava se
+# dalje u pozadini i cuva u kes; sledece otvaranje strane ga prikazuje.
+WAIT_SECONDS = 20
+LOADING = "Podaci se još učitavaju. Osvežite stranu za minut."
 
-    Podaci mogu biti i stari kes ako servis trenutno ne radi.
-    """
-    data_key, error_key = _keys(platform, account_id, start, end)
-    payload, fresh = _fresh(data_key, end)
-    if fresh:
-        return payload, None
-    recent = _recent_error(error_key)
-    if recent or not fetch:
-        return payload, recent
-    mod = get(platform)
+_pool = ThreadPoolExecutor(max_workers=6, thread_name_prefix="platforme")
+_inflight = {}  # (kanal, nalog, od, do) -> Future koji ga ucitava
+_inflight_lock = threading.Lock()
+
+
+def _job(app, mod, token, account_id, start, end):
+    """Ucitava i pamti brojke jednog naloga. Radi u pozadinskoj niti, sa svojom vezom ka bazi."""
+    key = (mod.KEY, account_id, start, end)
+    data_key, error_key = _keys(mod.KEY, account_id, start, end)
     try:
-        result = mod.fetch_daily(mod.prepare(), account_id, start, end)
-    except SourceError as exc:
-        _remember_error(error_key, exc)
-        return payload, str(exc)
-    _store(data_key, error_key, result)
-    return result, None
+        with app.app_context():
+            try:
+                result = mod.fetch_daily(token, account_id, start, end)
+            except SourceError as exc:
+                _remember_error(error_key, exc)
+                raise
+            except Exception as exc:  # neocekivana greska ne sme da obori stranu
+                error = SourceError(f"Neočekivana greška pri čitanju: {exc}")
+                _remember_error(error_key, error)
+                raise error
+            _store(data_key, error_key, result)
+            return result
+    finally:
+        with _inflight_lock:
+            _inflight.pop(key, None)
 
 
-def warm(items):
-    """Osvezava kes za vise naloga odjednom.
+def _submit(app, mod, token, account_id, start, end):
+    key = (mod.KEY, account_id, start, end)
+    with _inflight_lock:
+        future = _inflight.get(key)
+        if future is None:
+            future = _pool.submit(_job, app, mod, token, account_id, start, end)
+            _inflight[key] = future
+        return future
 
-    items: [(kanal, nalog, od, do)]. Vraca {(kanal, nalog): greska}.
+
+def warm(items, wait=None):
+    """Osvezava kes za vise naloga odjednom, a ceka najvise WAIT_SECONDS.
+
+    items: [(kanal, nalog, od, do)]. Vraca {(kanal, nalog): greska}; za naloge
+    koji se jos ucitavaju greska je LOADING.
     """
+    from flask import current_app
+
+    app = current_app._get_current_object()
     errors, stale = {}, {}
     for platform, account_id, start, end in dict.fromkeys(items):
         data_key, error_key = _keys(platform, account_id, start, end)
@@ -116,7 +142,7 @@ def warm(items):
         else:
             stale.setdefault(platform, []).append((account_id, start, end))
 
-    # Tokeni se pripremaju ovde, u glavnoj niti, jer jedino ona sme da cita bazu.
+    # Tokeni se pripremaju ovde, u nitima zahteva, jer citaju bazu ove veze.
     jobs = []
     for platform, wanted in stale.items():
         mod = get(platform)
@@ -126,23 +152,36 @@ def warm(items):
             for account_id, _, _ in wanted:
                 errors[(platform, account_id)] = str(exc)
             continue
-        jobs.extend((mod, token, account_id, start, end) for account_id, start, end in wanted)
+        for account_id, start, end in wanted:
+            jobs.append(((platform, account_id), _submit(app, mod, token, account_id, start, end)))
     if not jobs:
         return errors
 
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = [
-            (mod.KEY, account_id, start, end, pool.submit(mod.fetch_daily, token, account_id, start, end))
-            for mod, token, account_id, start, end in jobs
-        ]
-    for platform, account_id, start, end, future in futures:
-        data_key, error_key = _keys(platform, account_id, start, end)
-        try:
-            _store(data_key, error_key, future.result())
-        except SourceError as exc:
-            _remember_error(error_key, exc)
-            errors[(platform, account_id)] = str(exc)
+    wait_futures([f for _, f in jobs], timeout=WAIT_SECONDS if wait is None else wait)
+    for pair, future in jobs:
+        if not future.done():
+            errors[pair] = LOADING
+        elif future.exception() is not None:
+            errors[pair] = str(future.exception())
     return errors
+
+
+def daily(platform, account_id, start, end, fetch=True):
+    """Brojke po kampanji i danu za period. Vraca (podaci, greska).
+
+    Podaci mogu biti i stari kes ako servis trenutno ne radi ili se jos ucitava.
+    """
+    data_key, error_key = _keys(platform, account_id, start, end)
+    payload, fresh = _fresh(data_key, end)
+    if fresh:
+        return payload, None
+    recent = _recent_error(error_key)
+    if recent or not fetch:
+        return payload, recent
+    error = warm([(platform, account_id, start, end)]).get((platform, account_id))
+    if error is None:
+        payload, _ = base.cache_get(data_key)
+    return payload, error
 
 
 def summarize(payload, start, end, conv_kind):

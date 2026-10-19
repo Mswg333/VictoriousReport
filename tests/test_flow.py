@@ -560,6 +560,40 @@ preview = text(team.get("/tim/klijent/1/pregled?kanal=ukupno").text)
 assert "doneli 135 upita" in preview and "Microsoft Ads (Bing): u zbiru su ranije sačuvani podaci" in preview
 fake.down = set()
 
+# 14b. Meta odbija prevelik zahtev: portal ga sam deli na manje delove.
+with flask_app.app_context():
+    platforms.clear("meta", "9001")
+fake.meta_max_days = 6
+fake.ranges.clear()
+page = visitor.get(f"{path}?kanal=meta").text
+assert "doneli 60 upita" in hero(page), hero(page)
+meta_parts = [r for r in fake.ranges if r[0] == "meta"]
+assert fake.meta_refused > 0 and all((e - s).days + 1 <= 6 for _, s, e in meta_parts), meta_parts
+assert min(s for _, s, _ in meta_parts) == platforms.default_range()[0] and max(e for _, _, e in meta_parts) == YESTERDAY
+fake.meta_max_days = 0
+
+# 14c. Spora platforma ne zaustavlja stranu: posle roka strana se prikaze, a ucitavanje se nastavlja u pozadini.
+with flask_app.app_context():
+    platforms.clear("tiktok", "7001")
+started = time.time()
+team.get("/tim?dana=7")  # koliko traje strana kad su podaci vec zapamceni (osim TikTok-a)
+baseline = time.time() - started
+with flask_app.app_context():
+    platforms.clear("tiktok", "7001")
+platforms.WAIT_SECONDS = 0.3
+fake.slow = {"tiktok": 3}
+started = time.time()
+plain = text(team.get("/tim").text)
+assert time.time() - started < baseline + 2, "strana ne ceka sporu platformu"
+assert "TikTok Ads: Podaci se još učitavaju. Osvežite stranu za minut." in plain, plain[:600]
+page = visitor.get(f"{path}?kanal=tiktok").text
+assert "Podaci se upravo učitavaju." in page and "Osvežite stranu za minut" in page
+time.sleep(3.2)  # pozadinsko ucitavanje se zavrsava i pamti
+fake.slow = {}
+platforms.WAIT_SECONDS = 20
+assert "TikTok Ads: Podaci se još" not in text(team.get("/tim").text)
+assert "doneli 0 upita" in hero(visitor.get(f"{path}?kanal=tiktok").text)
+
 # 15. Prekinut kanal: klijent dobija poruku bez tehnickih detalja, ostali kanali rade.
 team.post("/tim/izvor/meta/prekini", data={"_csrf": token})
 page = visitor.get(f"{path}?kanal=meta").text

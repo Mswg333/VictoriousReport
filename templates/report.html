@@ -61,6 +61,11 @@
     <h1 class="hero">Izveštaj počinje {{ not_started }}.</h1>
     <p class="muted" style="max-width: 60ch">Brojke se pojavljuju dan nakon početka perioda. Ako imate pitanje, javite se svom kontaktu u agenciji Victorious.</p>
   </section>
+  {% elif not view and loading %}
+  <section class="stack gap-16">
+    <h1 class="hero">Podaci se upravo učitavaju.</h1>
+    <p class="muted" style="max-width: 60ch">Osvežite stranu za minut. Brojke se posle toga pamte, pa se izveštaj otvara odmah.</p>
+  </section>
   {% elif not view %}
   <section class="stack gap-16">
     <h1 class="hero">Podaci za ovaj izveštaj trenutno nisu dostupni.</h1>

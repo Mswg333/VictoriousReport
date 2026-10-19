@@ -1002,6 +1002,7 @@ def render_report(client, preview):
         },
         not_started=not_started,
         view=view,
+        loading=view is None and any(platforms.LOADING in note for note in notes),
     )
 
 
