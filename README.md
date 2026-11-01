@@ -79,6 +79,12 @@ Meta nalozi), a svaki dobija svoj izveštaj:
   (`follows_and_unfollows`, deo FOLLOWER) i ukupan broj pratilaca. Za periode
   duže od 30 dana doseg je zbir po 30 dana.
 
+Stranice iz business portfolija klijenta Facebook često ne vraća na spisku
+„stranica kojima upravljate“. Takva stranica se dodaje linkom ili ID-jem u
+podešavanjima klijenta („Nema je na listi? Nalepite link…“): portal je traži
+direktno, a njen Instagram dodaje sam. Na strani Izvor podataka uz svaki
+povezani Facebook nalog piše koliko stranica vidi i koje dozvole mu nedostaju.
+
 Meta veza za ovo mora imati i dozvole `pages_show_list`,
 `pages_read_engagement`, `read_insights`, `instagram_basic` i
 `instagram_manage_insights` (u Facebook Login for Business konfiguraciji), pa

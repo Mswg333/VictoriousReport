@@ -70,9 +70,16 @@
             <option value="{{ a.id }}" {% if ch.source and ch.source.account_id == a.id %}selected{% set ns.found = true %}{% endif %}>{{ a.name }} ({{ account_label(ch.key, a.id) }}{% if a.currency %}, {{ a.currency }}{% endif %})</option>
             {% endfor %}
             {% if ch.source and not ns.found %}
-            <option value="{{ ch.source.account_id }}" selected>{{ ch.source.account_name }} ({{ account_label(ch.key, ch.source.account_id) }}, više nije u listi)</option>
+            <option value="{{ ch.source.account_id }}" selected>{{ ch.source.account_name }} ({{ account_label(ch.key, ch.source.account_id) }}{% if ch.key in ('fb_page', 'instagram') %}, dodato ručno{% else %}, više nije u listi{% endif %})</option>
             {% endif %}
           </select>
+          {% if ch.key == 'fb_page' %}
+          <div class="stack gap-4">
+            <label class="field small" for="manual_fb_page">Nema je na listi? Nalepite link ili ID stranice</label>
+            <input id="manual_fb_page" name="manual_fb_page" type="text" placeholder="https://www.facebook.com/ime-stranice" autocomplete="off">
+            <p class="muted small">Za stranice iz business portfolija klijenta. Portal je traži direktno, a njen Instagram dodaje sam.</p>
+          </div>
+          {% endif %}
           <label class="check" style="border-top: 0; padding-top: 4px">
             <input type="checkbox" name="vis_{{ ch.key }}" value="1" {% if not ch.source or ch.source.visible %}checked{% endif %}>
             <span><strong>Prikaži klijentu izveštaj za {{ ch.name }}</strong></span>

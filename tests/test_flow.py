@@ -44,7 +44,7 @@ import db  # noqa: E402
 import fmt  # noqa: E402
 import google_auth  # noqa: E402
 import platforms  # noqa: E402
-from platforms import google_ads, meta_ads  # noqa: E402
+from platforms import google_ads, meta_ads, meta_organic  # noqa: E402
 from tests.fakes import YESTERDAY, install  # noqa: E402
 
 assert not db.IS_PG, "test radi samo nad privremenom SQLite bazom"
@@ -535,6 +535,45 @@ fake.fb_engagement_broken = False
 fake.organic_calls.clear()
 visitor.get(f"{path}?kanal=instagram&od={YESTERDAY - timedelta(days=59)}&do={YESTERDAY}")
 assert "600" in text(visitor.get(f"{path}?kanal=instagram").text), "posete profila (20 dnevno)"
+
+# 12g2. Stranica iz business portfolija klijenta: nema je na spisku, dodaje se linkom; Instagram ide sam.
+assert "Nalepite link ili ID stranice" in team.get("/tim/klijent/1").text
+resp = team.post("/tim/klijent/1", data={**SETTINGS, "src_fb_page": "", "src_instagram": "",
+                                          "manual_fb_page": "https://www.facebook.com/999"}, follow_redirects=True)
+assert "Stranica postoji, ali nijedan povezani Facebook nalog nema pristup njenim uvidima" in resp.text
+resp = team.post("/tim/klijent/1", data={**SETTINGS, "src_fb_page": "", "src_instagram": "", "vis_fb_page": "1",
+                                          "vis_instagram": "1", "manual_fb_page": "https://www.facebook.com/blokvrata/?ref=bookmarks"},
+                 follow_redirects=True)
+assert "Izmene su sačuvane." in resp.text, text(resp.text)[:500]
+with flask_app.app_context():
+    saved = {r["platform"]: r["account_id"] for r in db.query("SELECT * FROM portal_sources WHERE client_id = 1")}
+assert saved.get("fb_page") == "303" and saved.get("instagram") == "403", saved
+settings_page = text(team.get("/tim/klijent/1").text)
+assert "Block Lock Doors (303, dodato ručno)" in settings_page and "@bld.vrata (Block Lock Doors) (403, dodato ručno)" in settings_page
+assert "15.000 puta" in hero(visitor.get(f"{path}?kanal=fb_page").text)
+# Posle restarta portal ne zna token stranice iz memorije: trazi ga sam, a Instagram cita licnim tokenom.
+meta_organic.forget()
+with flask_app.app_context():
+    platforms.clear("fb_page", "303"); platforms.clear("instagram", "403")
+assert "15.000 puta" in hero(visitor.get(f"{path}?kanal=fb_page").text)
+meta_organic.forget()
+assert "9.000 puta" in hero(visitor.get(f"{path}?kanal=instagram").text)
+assert fake.ig_user_token_calls > 0
+# Ponovno cuvanje bez izmena zadrzava rucno dodatu stranicu.
+team.post("/tim/klijent/1", data={**SETTINGS, "src_fb_page": "303", "vis_fb_page": "1", "src_instagram": "403", "vis_instagram": "1"})
+with flask_app.app_context():
+    assert {r["platform"] for r in db.query("SELECT platform FROM portal_sources WHERE client_id = 1")} >= {"fb_page", "instagram"}
+# Izvor podataka: koliko stranica vidi nalog i koje dozvole fale.
+plain = text(team.get("/tim/izvor").text)
+assert "Facebook stranica na spisku: 2." in plain, plain[:2000]
+fake.meta_granted = ["ads_read", "pages_show_list"]
+meta_organic._diag["at"] = 0
+plain = text(team.get("/tim/izvor").text)
+assert "Nedostaju dozvole: pages_read_engagement, read_insights, instagram_basic, instagram_manage_insights." in plain
+fake.meta_granted = ["ads_read", "pages_show_list", "pages_read_engagement", "read_insights", "instagram_basic",
+                     "instagram_manage_insights"]
+meta_organic._diag["at"] = 0
+team.post("/tim/klijent/1", data={**SETTINGS, "src_fb_page": "", "src_instagram": ""})
 
 # 12h. Tabela po mesecima, za oglase, zbirni izvestaj, sajt, Facebook i Instagram.
 from datetime import date as _date  # noqa: E402

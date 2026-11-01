@@ -334,6 +334,7 @@ def data_source():
         only_ids=google_ads.ONLY_IDS,
         meta=channel_status(meta_ads),
         meta_people=meta_ads.people(),
+        meta_diag=meta_organic.diagnose() if meta_ads.connected() else {},
         meta_login=meta_ads.login_ready(),
         meta_warn_days=meta_ads.WARN_DAYS,
         microsoft=channel_status(microsoft_ads),
@@ -674,9 +675,31 @@ def save_channels(client_id, form):
             continue
         set_source(client_id, mod.KEY, account["id"], account["name"], account["currency"], visible)
 
+    # Stranica dodata rucno (link ili ID), npr. iz business portfolija klijenta.
+    def shown(kind):
+        return bool(form.get(f"vis_{kind}")) if f"src_{kind}" in form else True
+
+    manual = form.get(f"manual_{meta_organic.FB_KEY}", "").strip()
+    skip = set()
+    if manual:
+        try:
+            page = meta_organic.lookup_page(manual)
+        except SourceError as exc:
+            problems.append(f"{meta_organic.FB_NAME}: {exc}")
+        else:
+            set_source(client_id, meta_organic.FB_KEY, page["id"], page["name"], "", shown(meta_organic.FB_KEY))
+            skip.add(meta_organic.FB_KEY)
+            if page["ig_id"] and not form.get(f"src_{meta_organic.IG_KEY}"):
+                set_source(
+                    client_id, meta_organic.IG_KEY, page["ig_id"], f"@{page['ig_name']} ({page['name']})", "",
+                    shown(meta_organic.IG_KEY),
+                )
+                skip.add(meta_organic.IG_KEY)
+            current = sources_of(client_id)
+
     for kind in meta_organic.KEYS:
         field = f"src_{kind}"
-        if field not in form:
+        if field not in form or kind in skip:
             continue
         chosen = form.get(field, "").strip()
         visible = bool(form.get(f"vis_{kind}"))

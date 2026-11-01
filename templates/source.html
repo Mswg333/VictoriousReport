@@ -97,6 +97,14 @@
             {% elif p.expired %}Veza je istekla. Povežite ponovo.
             {% else %}Veza ističe za {{ p.days_left|int if p.days_left >= 1 else 'manje od 1' }} {{ 'dan' if p.days_left|int == 1 else 'dana' }}.{% endif %}
           </div>
+          {% set d = meta_diag.get(p.platform) %}
+          {% if d %}
+          <div class="small {% if d.missing or d.error %}problem{% else %}muted{% endif %}">
+            {% if d.error %}Provera dozvola nije uspela: {{ d.error }}
+            {% else %}Facebook stranica na spisku: {{ d.pages if d.pages is not none else 0 }}.
+            {% if d.missing %} Nedostaju dozvole: {{ d.missing|join(', ') }}.{% endif %}{% endif %}
+          </div>
+          {% endif %}
         </div>
         <form method="post" action="{{ url_for('data_source_disconnect', platform=p.platform) }}" onsubmit="return confirm('Prekinuti ovu Meta vezu? Nalozi koje vidi samo ova osoba neće raditi u izveštajima.')">
           <input type="hidden" name="_csrf" value="{{ csrf_token() }}">

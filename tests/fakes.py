@@ -64,6 +64,9 @@ class FakeNet:
         self.organic_calls = []
         self.fb_engagement_broken = False
         self.fb_views_broken = False
+        self.ig_user_token_calls = 0
+        self.meta_granted = ["ads_read", "pages_show_list", "pages_read_engagement", "read_insights",
+                             "instagram_basic", "instagram_manage_insights"]
         self.meta_max_days = 0     # Meta odbija zahteve duze od ovoliko dana (0 = ne odbija)
         self.meta_refused = 0
         self.slow = {}             # kanal -> sekunde kasnjenja odgovora
@@ -337,7 +340,21 @@ class FakeNet:
                 200,
                 {"data": [{"id": "act_9001", "account_id": "9001", "name": "Hrast Meta", "currency": "EUR", "account_status": 1}]},
             )
+        if path.endswith("/me/permissions"):
+            return FakeResponse(200, {"data": [{"permission": p, "status": "granted"} for p in self.meta_granted]})
+        if path.endswith("/303") or path.endswith("/blokvrata"):  # stranica iz portfolija klijenta, nije na spisku
+            return FakeResponse(200, {"id": "303", "name": "Block Lock Doors", "access_token": "page-token-303",
+                                      "instagram_business_account": {"id": "403", "username": "bld.vrata"}})
+        if path.endswith("/999"):  # stranica koju nalog vidi, ali joj nema pristup
+            return FakeResponse(200, {"id": "999", "name": "Tudja stranica"})
+        if "/403" in path:  # Instagram citan licnim tokenom (stranica nije na spisku)
+            self.ig_user_token_calls += 1
+            if path.endswith("/insights"):
+                return self._meta_page("page-token-303", path, params)
+            return FakeResponse(200, {"id": "403", "username": "bld.vrata", "followers_count": 850})
         if path.endswith("/me/accounts"):
+            if params.get("fields") == "id":
+                return FakeResponse(200, {"data": [{"id": "301"}, {"id": "302"}]})
             assert "access_token" in params["fields"] and "instagram_business_account" in params["fields"]
             return FakeResponse(200, {"data": [
                 {"id": "301", "name": "Hrast stranica", "access_token": "page-token-301", "followers_count": 1200,
@@ -412,9 +429,11 @@ class FakeNet:
 
     def _meta_page(self, token, path, params):
         """Organski uvidi Facebook stranice 301 i njenog Instagram profila 401."""
-        assert token == "page-token-301", token
+        assert token in ("page-token-301", "page-token-303"), token
         self.organic_calls.append((path.rsplit("/", 2)[-2] if path.endswith("/insights") else path.rsplit("/", 1)[-1],
                                    params.get("metric") if params else None))
+        page, ig = ("301", "401") if token == "page-token-301" else ("303", "403")
+        path = path.replace(f"/{page}", "/301").replace(f"/{ig}", "/401")  # obe stranice imaju iste brojke
         if path.endswith("/301"):
             return FakeResponse(200, {"followers_count": 1234, "name": "Hrast stranica"})
         if path.endswith("/401"):

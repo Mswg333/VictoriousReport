@@ -96,24 +96,131 @@ def accounts(kind):
     return cached(f"accounts:{kind}", LIST_TTL, lambda: list_accounts(kind))
 
 
+LOOKUP_FIELDS = "id,name,access_token,instagram_business_account{id,username}"
+
+
+def page_ref(text):
+    """ID ili korisnicko ime stranice iz linka ("facebook.com/blokvrata", "...?id=123") ili samog ID-ja."""
+    text = (text or "").strip()
+    if "id=" in text:
+        text = text.split("id=", 1)[1]
+    for prefix in ("https://", "http://", "www.", "m.", "web.", "facebook.com/", "fb.com/"):
+        if text.lower().startswith(prefix):
+            text = text[len(prefix):]
+    text = text.split("?")[0].split("&")[0].strip("/")
+    if text.lower().startswith("pages/"):
+        text = text.split("/")[-1]  # facebook.com/pages/Ime/123456
+    else:
+        text = text.split("/")[0]
+    return "".join(ch for ch in text if ch.isalnum() or ch in "._-")
+
+
+def lookup_page(text):
+    """Stranica po linku ili ID-ju, mimo spiska stranica (npr. stranica iz business portfolija klijenta).
+
+    Radi ako bar jedan povezani nalog ima pristup stranici. Vraca {"id", "name", "ig_id", "ig_name"}.
+    """
+    ref = page_ref(text)
+    if not ref:
+        raise SourceError("Upišite link ili ID Facebook stranice.")
+    seen_without_access = False
+    for person in meta_ads._as_list(meta_ads.prepare()):
+        try:
+            row = meta_ads._get(f"{meta_ads.BASE}/{ref}", person["token"], {"fields": LOOKUP_FIELDS})
+        except SourceError:
+            continue
+        if not row.get("access_token"):
+            seen_without_access = True
+            continue
+        page = _remember_page(row)
+        return page
+    if seen_without_access:
+        raise SourceError(
+            "Stranica postoji, ali nijedan povezani Facebook nalog nema pristup njenim uvidima. "
+            "Dodelite sebi stranicu u portfoliju klijenta (bar „View insights“) i povežite nalog ponovo."
+        )
+    raise SourceError("Nijedan povezani Facebook nalog ne vidi tu stranicu. Proverite link.")
+
+
+def _remember_page(row):
+    page_id = str(row.get("id", ""))
+    ig = row.get("instagram_business_account") or {}
+    page = {"id": page_id, "name": row.get("name") or page_id, "ig_id": str(ig.get("id", "")), "ig_name": ig.get("username") or ""}
+    with _lock:
+        _memory["tokens"][page_id] = row["access_token"]
+        if page["ig_id"]:
+            _memory["ig_page"][page["ig_id"]] = page_id
+        if all(p["id"] != page_id for p in _memory["pages"]):
+            _memory["pages"].append(page)
+    return page
+
+
 def _page_token(page_id):
     memory = _load()
     if page_id not in memory["tokens"]:
         memory = _load(force=True)
     token = memory["tokens"].get(page_id)
-    if not token:
-        raise SourceError("Nijedan povezani Facebook nalog nema pristup ovoj stranici (ili nedostaje dozvola za stranice).")
-    return token
+    if token:
+        return token
+    # Stranica koje nema na spisku (dodata rucno): token se trazi direktno.
+    for person in meta_ads._as_list(meta_ads.prepare()):
+        try:
+            row = meta_ads._get(f"{meta_ads.BASE}/{page_id}", person["token"], {"fields": LOOKUP_FIELDS})
+        except SourceError:
+            continue
+        if row.get("access_token"):
+            _remember_page(row)
+            return row["access_token"]
+    raise SourceError("Nijedan povezani Facebook nalog nema pristup ovoj stranici (ili nedostaje dozvola za stranice).")
 
 
 def _ig_token(ig_id):
     memory = _load()
-    if ig_id not in memory["ig_page"]:
-        memory = _load(force=True)
     page_id = memory["ig_page"].get(ig_id)
-    if not page_id:
-        raise SourceError("Nijedan povezani Facebook nalog nema pristup ovom Instagram profilu.")
-    return _page_token(page_id)
+    if page_id:
+        return _page_token(page_id)
+    # Instagram cija stranica nije na spisku: cita se licnim tokenom onoga ko ima pristup.
+    for person in meta_ads._as_list(meta_ads.prepare()):
+        try:
+            meta_ads._get(f"{meta_ads.BASE}/{ig_id}", person["token"], {"fields": "id,username"})
+        except SourceError:
+            continue
+        return person["token"]
+    raise SourceError("Nijedan povezani Facebook nalog nema pristup ovom Instagram profilu.")
+
+
+REQUIRED_SCOPES = ["pages_show_list", "pages_read_engagement", "read_insights", "instagram_basic", "instagram_manage_insights"]
+_diag = {"at": 0, "sig": "", "data": {}}
+
+
+def diagnose():
+    """Za stranu Izvor podataka: koliko stranica vidi svaki povezani nalog i koje dozvole mu fale."""
+    try:
+        people = meta_ads._as_list(meta_ads.prepare())
+    except SourceError:
+        return {}
+    sig = "|".join(sorted(p["key"] + p["token"][-6:] for p in people))
+    with _lock:
+        if _diag["sig"] == sig and time.time() - _diag["at"] < 300:
+            return _diag["data"]
+    data = {}
+    for person in people:
+        info = {"pages": None, "missing": [], "error": None}
+        try:
+            granted = {
+                row.get("permission")
+                for row in meta_ads._get(f"{meta_ads.BASE}/me/permissions", person["token"]).get("data", [])
+                if row.get("status") == "granted"
+            }
+            info["missing"] = [scope for scope in REQUIRED_SCOPES if scope not in granted]
+            if "pages_show_list" in granted:
+                info["pages"] = len(meta_ads._paged(f"{meta_ads.BASE}/me/accounts", person["token"], {"fields": "id", "limit": 100}))
+        except SourceError as exc:
+            info["error"] = str(exc)
+        data[person["key"]] = info
+    with _lock:
+        _diag.update({"at": time.time(), "sig": sig, "data": data})
+    return data
 
 
 def _chunks(start, end, days):
