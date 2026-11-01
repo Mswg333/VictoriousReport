@@ -440,6 +440,7 @@ def _single(client, mod, source, start, end, data_range):
                 report["keywords"] = [
                     {
                         "keyword": w["keyword"],
+                        "raw": {"impressions": w["impressions"], "clicks": w["clicks"], "ctr": round(ctr, 6)},
                         "impressions": fmt.num(w["impressions"]),
                         "clicks": fmt.num(w["clicks"]),
                         "ctr": fmt.percent(ctr, 2),

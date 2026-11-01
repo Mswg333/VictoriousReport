@@ -219,3 +219,7 @@ input[type=file] { font: inherit; max-width: 100%; }
 .kw-bar { display: flex; align-items: center; gap: 8px; min-width: 140px; }
 .kw-bar span { display: block; height: 14px; min-width: 2px; background: var(--purple); border-radius: 0 3px 3px 0; flex: none; max-width: calc(100% - 64px); }
 .kw-bar em { font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; }
+button.sort { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; font: inherit; color: inherit; white-space: nowrap; }
+button.sort:hover { color: var(--purple); }
+button.sort:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; border-radius: 3px; }
+th[aria-sort="ascending"] button.sort, th[aria-sort="descending"] button.sort { color: var(--purple); }

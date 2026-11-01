@@ -84,15 +84,20 @@
       <p class="muted">Ključne reči sa najviše klikova: koliko puta je oglas prikazan, koliko klikova je donela i CTR (procenat prikaza koji su doneli klik).</p>
     </div>
     <div class="table-box">
-      <table class="kw-table">
-        <thead><tr><th>Ključna reč</th><th class="num">Prikazi</th><th>CTR</th><th>Klikovi</th></tr></thead>
+      <table class="kw-table sortable">
+        <thead><tr>
+          <th aria-sort="none"><button type="button" class="sort" data-col="0" data-type="text">Ključna reč <span aria-hidden="true">↕</span></button></th>
+          <th class="num" aria-sort="none"><button type="button" class="sort" data-col="1">Prikazi <span aria-hidden="true">↕</span></button></th>
+          <th aria-sort="none"><button type="button" class="sort" data-col="2">CTR <span aria-hidden="true">↕</span></button></th>
+          <th aria-sort="descending"><button type="button" class="sort" data-col="3">Klikovi <span aria-hidden="true">↓</span></button></th>
+        </tr></thead>
         <tbody>
           {% for k in view.keywords %}
           <tr>
-            <td><strong style="font-weight: 600">{{ k.keyword }}</strong></td>
-            <td class="num">{{ k.impressions }}</td>
-            <td><div class="kw-bar"><span style="width: {{ k.ctr_bar }}%"></span><em>{{ k.ctr }}</em></div></td>
-            <td><div class="kw-bar"><span style="width: {{ k.clicks_bar }}%"></span><em>{{ k.clicks }}</em></div></td>
+            <td data-v="{{ k.keyword }}"><strong style="font-weight: 600">{{ k.keyword }}</strong></td>
+            <td class="num" data-v="{{ k.raw.impressions }}">{{ k.impressions }}</td>
+            <td data-v="{{ k.raw.ctr }}"><div class="kw-bar"><span style="width: {{ k.ctr_bar }}%"></span><em>{{ k.ctr }}</em></div></td>
+            <td data-v="{{ k.raw.clicks }}"><div class="kw-bar"><span style="width: {{ k.clicks_bar }}%"></span><em>{{ k.clicks }}</em></div></td>
           </tr>
           {% endfor %}
         </tbody>

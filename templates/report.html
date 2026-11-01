@@ -101,4 +101,30 @@
   </footer>
   {% endif %}
 </main>
+<script>
+// Sortiranje tabela klikom na naslov kolone (strelica gore/dole).
+document.querySelectorAll("table.sortable").forEach(function (table) {
+  var heads = table.querySelectorAll("th");
+  table.querySelectorAll("button.sort").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var th = btn.parentNode, col = +btn.dataset.col, text = btn.dataset.type === "text";
+      var dir = th.getAttribute("aria-sort") === "descending" ? "ascending" : "descending";
+      if (th.getAttribute("aria-sort") === "none" && text) dir = "ascending";
+      heads.forEach(function (h) {
+        h.setAttribute("aria-sort", "none");
+        var s = h.querySelector("span"); if (s) s.textContent = "↕";
+      });
+      th.setAttribute("aria-sort", dir);
+      btn.querySelector("span").textContent = dir === "ascending" ? "↑" : "↓";
+      var body = table.tBodies[0], rows = Array.prototype.slice.call(body.rows);
+      rows.sort(function (a, b) {
+        var x = a.cells[col].dataset.v, y = b.cells[col].dataset.v;
+        var r = text ? x.localeCompare(y, "sr") : parseFloat(x) - parseFloat(y);
+        return dir === "ascending" ? r : -r;
+      });
+      rows.forEach(function (r) { body.appendChild(r); });
+    });
+  });
+});
+</script>
 {% endblock %}
