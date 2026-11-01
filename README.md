@@ -92,6 +92,13 @@ se posle dodavanja dozvola nalog povezuje ponovo. Tokeni stranica se drže samo
 u memoriji, ne u bazi. Ako jedna metrika ne radi, ostale se prikazuju, a tim u
 pregledu vidi koja nije učitana.
 
+## Ceo izveštaj na jednoj strani
+
+U podešavanjima klijenta („Izgled izveštaja“) može se uključiti „Ceo izveštaj
+na jednoj strani“: umesto kartica, svi delovi (zbirni, kanali oglašavanja,
+Facebook, Instagram, sajt) stoje jedan ispod drugog, svaki sa svojim naslovom.
+Izbor perioda važi za sve delove. Zgodno za male klijente.
+
 ## Tabela po mesecima
 
 Svaki izveštaj (kanal oglašavanja, zbirni, sajt, Facebook, Instagram) ima deo

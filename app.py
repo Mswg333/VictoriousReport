@@ -736,10 +736,11 @@ def client_settings(client_id):
         name = request.form.get("name", "").strip()[:120] or client["name"]
         keys = [mod.KEY for mod in platforms.ADS] + list(meta_organic.KEYS) + [layout.COMBINED, layout.SITE]
         db.execute(
-            "UPDATE portal_clients SET name = ?, show_combined = ?, conv_kind = ?, layout = ? WHERE id = ?",
+            "UPDATE portal_clients SET name = ?, show_combined = ?, single_page = ?, conv_kind = ?, layout = ? WHERE id = ?",
             (
                 name,
                 1 if request.form.get("show_combined") else 0,
+                1 if request.form.get("single_page") else 0,
                 conv_kind,
                 layout.from_form(client, request.form, keys),
                 client_id,
@@ -1031,14 +1032,31 @@ def render_report(client, preview):
         endpoint, args = "client_report", {"token": client["token"]}
 
     window_start, window_end, fixed = client_window(client)
+    parts = []
     if window_end < window_start:
         # Tim je odredio period koji jos nije poceo.
         view, notes, start, end = None, [], window_start, window_start
         not_started = fmt.date_long(window_start, window_start.year != base.yesterday().year)
     else:
         start, end = view_range(window_start, window_end, fixed)
-        view, notes = report.build(client, sources, tab, start, end, (window_start, window_end))
         not_started = None
+        if client.get("single_page") and len(tabs) > 1:
+            # Ceo izvestaj na jednoj strani: svi delovi jedan ispod drugog.
+            data_range = (window_start, window_end)
+            platforms.warm([
+                (key, sources[key]["account_id"], *data_range) for key, _ in tabs if key in platforms.BY_KEY
+            ])
+            parts, notes = [], []
+            for key, name in tabs:
+                part_view, part_notes = report.build(client, sources, key, start, end, data_range)
+                notes += part_notes
+                parts.append({
+                    "key": key, "name": name, "view": part_view,
+                    "loading": part_view is None and any(platforms.LOADING in n for n in part_notes),
+                })
+            view = next((p["view"] for p in parts if p["view"]), None)
+        else:
+            view, notes = report.build(client, sources, tab, start, end, (window_start, window_end))
 
     def link(**changes):
         params = {"kanal": tab, "od": start.isoformat(), "do": end.isoformat(), **changes}
@@ -1067,6 +1085,7 @@ def render_report(client, preview):
         },
         not_started=not_started,
         view=view,
+        parts=parts,
         loading=view is None and any(platforms.LOADING in note for note in notes),
     )
 

@@ -206,3 +206,10 @@ details summary { cursor: pointer; font-weight: 600; color: var(--purple-dark); 
 .logo-preview { padding: 16px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--white); }
 input[type=file] { font: inherit; max-width: 100%; }
 @media (max-width: 480px) { .client-logo { height: 32px; max-width: 120px; } }
+
+/* ceo izvestaj na jednoj strani */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.report-part { padding-top: 8px; }
+.report-part + .report-part { border-top: 2px solid var(--line-soft); padding-top: 40px; }
+.part-title { font-size: 15px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--purple-dark); }
+.hero.part-hero { font-size: clamp(24px, 3.4vw, 34px); margin: 0; }

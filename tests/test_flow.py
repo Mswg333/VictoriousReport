@@ -694,6 +694,22 @@ assert hero(page).startswith("U poslednjih 30 dana Google Ads oglasi")
 labels = re.findall(r'>([^<]+)</a>', page.split('aria-label="Brzi izbor perioda"')[1].split("</nav>")[0])
 assert labels == ["90 dana", "30 dana", "7 dana", "1 dan"], labels
 
+# 12i. Ceo izvestaj na jednoj strani (za male klijente): bez kartica, svi delovi jedan ispod drugog.
+assert "Ceo izveštaj na jednoj strani" in team.get("/tim/klijent/1").text
+team.post("/tim/klijent/1", data={**SETTINGS, "single_page": "1"})
+page = visitor.get(path).text
+plain = text(page)
+assert 'class="tabs"' not in page
+titles = re.findall(r'<h2 class="part-title"[^>]*>([^<]+)</h2>', page)
+assert titles == ["Ukupno", "Google Ads", "Meta Ads", "Microsoft Ads (Bing)", "TikTok Ads", "Sajt (Analytics)"], titles
+heroes = [text(h).strip() for h in re.findall(r'<p class="hero part-hero">(.*?)</p>', page, re.S)]
+assert len(heroes) == 6 and heroes[1].startswith("U poslednjih 30 dana Google Ads oglasi su vam doneli 45 upita"), heroes
+assert "vaš sajt je imao 1.230 poseta" in plain and plain.count("Izveštaj prikazuje stanje zaključno sa") == 1
+week = text(visitor.get(f"{path}?od={YESTERDAY - timedelta(days=6)}&do={YESTERDAY}").text)
+assert "U poslednjih 7 dana Google Ads oglasi" in week and "U poslednjih 7 dana Meta Ads oglasi" in week
+team.post("/tim/klijent/1", data=SETTINGS)
+assert 'class="tabs"' in visitor.get(path).text
+
 # 13. Klijent ne vidi tim, ni pregled, ni nepostojece linkove.
 assert visitor.get("/tim").status_code == 302 and visitor.get("/tim/klijent/1/pregled").status_code == 302
 assert visitor.get("/k/nepostoji").status_code == 404

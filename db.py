@@ -45,6 +45,7 @@ SCHEMA = [
         range_end TEXT NOT NULL DEFAULT '',
         layout TEXT NOT NULL DEFAULT '',
         logo_version TEXT NOT NULL DEFAULT '',
+        single_page INTEGER NOT NULL DEFAULT 0,
         failed_attempts INTEGER NOT NULL DEFAULT 0,
         locked_until INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
@@ -195,6 +196,8 @@ def init_schema():
     for column in ("range_start", "range_end", "layout", "logo_version"):
         if column not in existing:
             cur.execute(f"ALTER TABLE portal_clients ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+    if "single_page" not in existing:
+        cur.execute("ALTER TABLE portal_clients ADD COLUMN single_page INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     cur.close()
     conn.close()

@@ -155,6 +155,14 @@
       </section>
 
       <section class="card stack gap-8">
+        <h2>Izgled izveštaja</h2>
+        <label class="check">
+          <input type="checkbox" name="single_page" value="1" {% if client.single_page %}checked{% endif %}>
+          <span><strong>Ceo izveštaj na jednoj strani</strong><span class="muted small">Umesto kartica (Meta Ads, Facebook, Instagram…) svi delovi stoje jedan ispod drugog. Dobro za klijente sa malo kanala i brojki.</span></span>
+        </label>
+      </section>
+
+      <section class="card stack gap-8">
         <h2>Naziv i konverzije</h2>
         <div class="stack gap-8 line-row">
           <label class="field" for="conv_kind">Kako zovemo konverzije kod ovog klijenta</label>
