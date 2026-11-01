@@ -249,6 +249,15 @@ def search_terms(account_id, start, end):
     )
 
 
+def keywords(account_id, start, end):
+    """Kljucne reci (samo Google Ads), zapamcene kao i ostale brojke."""
+    return base.cached(
+        f"keywords:{google_ads.KEY}:{account_id}:{start.isoformat()}:{end.isoformat()}",
+        base.data_ttl(end),
+        lambda: google_ads.fetch_keywords(google_ads.prepare(), account_id, start, end),
+    )
+
+
 def reach(account_id, start, end):
     """Doseg i frekvencija (samo Meta Ads), zapamceni kao i ostale brojke."""
     return base.cached(
@@ -269,7 +278,7 @@ def ad_rankings(account_id, start, end):
 
 def clear(platform, account_id):
     """Brise zapamcene brojke za jedan nalog, za sve periode."""
-    for prefix in ("daily", "daily_error", "terms", "reach", "rankings"):
+    for prefix in ("daily", "daily_error", "terms", "keywords", "reach", "rankings"):
         base.cache_delete_prefix(f"{prefix}:{platform}:{account_id}:")
     if platform == ga4.KEY:
         base.cache_delete_prefix(f"ga4:{account_id}:")

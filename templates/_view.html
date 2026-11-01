@@ -77,6 +77,30 @@
   </section>
   {% endif %}
 
+  {% if view.keywords %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Ključne reči</h2>
+      <p class="muted">Ključne reči sa najviše klikova: koliko puta je oglas prikazan, koliko klikova je donela i CTR (procenat prikaza koji su doneli klik).</p>
+    </div>
+    <div class="table-box">
+      <table class="kw-table">
+        <thead><tr><th>Ključna reč</th><th class="num">Prikazi</th><th>CTR</th><th>Klikovi</th></tr></thead>
+        <tbody>
+          {% for k in view.keywords %}
+          <tr>
+            <td><strong style="font-weight: 600">{{ k.keyword }}</strong></td>
+            <td class="num">{{ k.impressions }}</td>
+            <td><div class="kw-bar"><span style="width: {{ k.ctr_bar }}%"></span><em>{{ k.ctr }}</em></div></td>
+            <td><div class="kw-bar"><span style="width: {{ k.clicks_bar }}%"></span><em>{{ k.clicks }}</em></div></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
   {% if view.rankings is defined %}
   <section class="stack gap-16">
     <div class="stack gap-4">

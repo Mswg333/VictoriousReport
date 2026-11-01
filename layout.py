@@ -58,6 +58,7 @@ ADS_SECTIONS = [
     ("chart", "Grafikon po danima"),
     ("campaigns", "Tabela kampanja"),
     ("terms", "Pojmovi pretrage"),
+    ("keywords", "Ključne reči: prikazi, CTR i klikovi (sa grafikonom)"),
     ("rankings", "Ocene oglasa (kvalitet, angažovanje, konverzije)"),
     ("monthly", "Tabela po mesecima"),
 ]
@@ -147,7 +148,7 @@ def options(key):
             metrics.insert(position, (extra, label))
     sections = [
         s for s in ADS_SECTIONS
-        if (s[0] != "terms" or key in TERMS_KEYS) and (s[0] != "rankings" or key == "meta")
+        if (s[0] not in ("terms", "keywords") or key in TERMS_KEYS) and (s[0] != "rankings" or key == "meta")
     ]
     return metrics, sections, ADS_CHART
 

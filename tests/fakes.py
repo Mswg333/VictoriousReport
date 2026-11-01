@@ -194,6 +194,17 @@ class FakeNet:
                     }
                 )
             return FakeResponse(200, {"results": rows})
+        if "FROM keyword_view" in query:
+            return FakeResponse(
+                200,
+                {
+                    "results": [
+                        {"adGroupCriterion": {"keyword": {"text": "rent a car beograd"}}, "metrics": {"impressions": "300", "clicks": "60"}},
+                        {"adGroupCriterion": {"keyword": {"text": "rent a car beograd"}}, "metrics": {"impressions": "60", "clicks": "42"}},
+                        {"adGroupCriterion": {"keyword": {"text": "dugorocni najam"}}, "metrics": {"impressions": "112"}},
+                    ]
+                },
+            )
         if "FROM search_term_view" in query:
             return FakeResponse(
                 200,

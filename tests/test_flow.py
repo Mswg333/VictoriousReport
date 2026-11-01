@@ -505,6 +505,12 @@ assert "Prosečna cena interakcije (Avg. cost)" in plain and "0,27 €" in plain
 assert "Interaction rate samo Search kampanja" in plain and "4,00 %" in plain, plain[:1500]
 row_pmax = plain.split("Performance Max")[1][:80]
 assert "–" in row_pmax, row_pmax  # PMax nije Search kampanja
+# Kljucne reci (Looker Studio "Search keyword"): prikazi, CTR, klikovi.
+team.post("/tim/klijent/1", data={**SETTINGS, "m_google_ads": ["clicks"], "s_google_ads": ["keywords"]})
+plain = text(visitor.get(f"{path}?kanal=google_ads").text)
+assert "Ključne reči" in plain and "rent a car beograd 360 28,33 % 102" in plain, plain[:2000]
+assert "dugorocni najam 112 0,00 % 0" in plain, plain[:2000]
+assert "Ključne reči" not in text(team.get("/tim/klijent/1").text).split("Šta klijent vidi u izveštaju Meta Ads")[1].split("Microsoft")[0]
 assert "Interaction rate" not in text(team.get("/tim/klijent/1").text).split("Šta klijent vidi u izveštaju Meta Ads")[1].split("Ocene oglasa")[0]
 
 # Facebook stranica i Instagram (organski, Meta Business Suite > Insights).

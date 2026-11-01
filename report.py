@@ -430,6 +430,27 @@ def _single(client, mod, source, start, end, data_range):
         except SourceError as exc:
             notes.append(f"Pojmovi pretrage nisu učitani: {exc}")
 
+    if getattr(mod, "HAS_SEARCH_TERMS", False) and "keywords" in lay["s"]:
+        try:
+            words = platforms.keywords(source["account_id"], summary["start"], summary["end"])
+            if words:
+                top_clicks = max(w["clicks"] for w in words) or 1
+                ctrs = [w["clicks"] / w["impressions"] if w["impressions"] else 0 for w in words]
+                top_ctr = max(ctrs) or 1
+                report["keywords"] = [
+                    {
+                        "keyword": w["keyword"],
+                        "impressions": fmt.num(w["impressions"]),
+                        "clicks": fmt.num(w["clicks"]),
+                        "ctr": fmt.percent(ctr, 2),
+                        "clicks_bar": round(w["clicks"] / top_clicks * 100, 1),
+                        "ctr_bar": round(ctr / top_ctr * 100, 1),
+                    }
+                    for w, ctr in zip(words, ctrs)
+                ]
+        except SourceError as exc:
+            notes.append(f"Ključne reči nisu učitane: {exc}")
+
     if "monthly" in lay["s"]:
         want_reach = mod.KEY in layout.REACH_KEYS and lay["m"] & {"reach", "frequency"}
         kind = fmt.CONV_KINDS.get(client["conv_kind"], fmt.CONV_KINDS["upit"])

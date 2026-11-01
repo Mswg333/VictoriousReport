@@ -201,5 +201,29 @@ def fetch_search_terms(token, account_id, start, end, limit=10):
     return [{"term": term, "clicks": count} for term, count in top]
 
 
+def fetch_keywords(token, account_id, start, end, limit=15):
+    """Kljucne reci sa najvise klikova (kao "Search keyword" u Looker Studiju):
+    prikazi, klikovi i CTR. Ista rec iz vise grupa oglasa se sabira."""
+    rows = search(
+        token,
+        account_id,
+        "SELECT ad_group_criterion.keyword.text, metrics.impressions, metrics.clicks "
+        "FROM keyword_view "
+        f"WHERE segments.date BETWEEN '{start.isoformat()}' AND '{end.isoformat()}' "
+        "AND metrics.impressions > 0",
+    )
+    totals = {}
+    for row in rows:
+        text = row.get("adGroupCriterion", {}).get("keyword", {}).get("text")
+        if not text:
+            continue
+        metrics = row.get("metrics", {})
+        entry = totals.setdefault(text, {"keyword": text, "impressions": 0, "clicks": 0})
+        entry["impressions"] += int(metrics.get("impressions", 0))
+        entry["clicks"] += int(metrics.get("clicks", 0))
+    top = sorted(totals.values(), key=lambda k: (k["clicks"], k["impressions"]), reverse=True)[:limit]
+    return top
+
+
 def connected():
     return google_auth.has_scope(google_auth.SCOPE_ADS)
