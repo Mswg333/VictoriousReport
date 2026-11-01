@@ -63,6 +63,7 @@ class FakeNet:
         self.ga4_old_ads_dimension = False
         self.organic_calls = []
         self.fb_engagement_broken = False
+        self.fb_views_broken = False
         self.meta_max_days = 0     # Meta odbija zahteve duze od ovoliko dana (0 = ne odbija)
         self.meta_refused = 0
         self.slow = {}             # kanal -> sekunde kasnjenja odgovora
@@ -427,14 +428,26 @@ class FakeNet:
             if params["period"] == "total_over_range":
                 assert metric == "page_total_media_view_unique"
                 return FakeResponse(200, {"data": [{"name": metric, "values": [{"value": 8200}]}]})
-            assert params["period"] == "day" and metric in ("page_media_view", "page_post_engagements")
-            per_day = 500 if metric == "page_media_view" else 18
+            per_days = {"page_media_view": 500, "page_post_engagements": 18, "page_views_total": 7,
+                        "page_daily_follows_unique": 1}
+            assert params["period"] == "day" and metric in per_days, metric
+            if metric == "page_views_total" and self.fb_views_broken:
+                return FakeResponse(400, {"error": {"message": "(#100) The value must be a valid insights metric", "code": 100}})
+            per_day = per_days[metric]
             start = date.fromtimestamp(since)
             values = [{"value": per_day, "end_time": f"{start + timedelta(days=i)}T07:00:00+0000"} for i in range(days)]
             return FakeResponse(200, {"data": [{"name": metric, "period": "day", "values": values}]})
         assert path.endswith("/401/insights"), path
         assert params["metric_type"] == "total_value" and days <= 30, (params, days)
-        per_day = {"views": 300, "reach": 100, "total_interactions": 12, "profile_links_taps": 1}[params["metric"]]
+        if params["metric"] == "follows_and_unfollows":
+            assert params["breakdown"] == "follow_type"
+            return FakeResponse(200, {"data": [{"name": "follows_and_unfollows", "total_value": {"breakdowns": [{
+                "dimension_keys": ["follow_type"],
+                "results": [{"dimension_values": ["FOLLOWER"], "value": 2 * days},
+                            {"dimension_values": ["NON_FOLLOWER"], "value": days}],
+            }]}}]})
+        per_day = {"views": 300, "reach": 100, "total_interactions": 12, "profile_links_taps": 1,
+                   "profile_views": 20}[params["metric"]]
         return FakeResponse(200, {"data": [{"name": params["metric"], "total_value": {"value": per_day * days}}]})
 
     def _meta_colleague(self, path, params):

@@ -363,7 +363,7 @@ team.post("/tim/klijent/1", data={
     "lay_ukupno": "1", "m_ukupno": ["impressions"], "s_ukupno": ["chart"], "chart_ukupno": "spend",
 })
 settings_page = team.get("/tim/klijent/1").text
-assert "Šta klijent vidi u izveštaju Meta Ads" in settings_page and "4 od 23 uključeno" in text(settings_page)
+assert "Šta klijent vidi u izveštaju Meta Ads" in settings_page and "4 od 24 uključeno" in text(settings_page)
 meta = visitor.get(f"{path}?kanal=meta").text
 plain = text(meta)
 assert hero(meta) == "U poslednjih 30 dana Meta Ads oglasi su bili aktivni.", hero(meta)
@@ -513,7 +513,8 @@ assert ("fb_page", "Facebook stranica") in tabs and ("instagram", "Instagram") i
 fb_page = visitor.get(f"{path}?kanal=fb_page").text
 assert hero(fb_page) == "U poslednjih 30 dana sadržaj na vašoj Facebook stranici pregledan je 15.000 puta.", hero(fb_page)
 plain = text(fb_page)
-for expected in ("8.200", "Ljudi je videlo sadržaj", "540", "Interakcija sa sadržajem", "1.234", "Pratilaca danas",
+for expected in ("8.200", "Ljudi je videlo sadržaj", "540", "Interakcija sa sadržajem", "1.234", "Ukupno pratilaca danas",
+                 "210", "Poseta profilu", "Novih pratilaca u periodu",
                  "Pregledi po danima"):
     assert expected in plain, expected
 ig_page = visitor.get(f"{path}?kanal=instagram").text
@@ -533,7 +534,50 @@ fake.fb_engagement_broken = False
 # Duzi period na Instagramu: delovi od najvise 30 dana.
 fake.organic_calls.clear()
 visitor.get(f"{path}?kanal=instagram&od={YESTERDAY - timedelta(days=59)}&do={YESTERDAY}")
-team.post("/tim/klijent/1", data={**SETTINGS, "src_fb_page": "", "src_instagram": ""})
+assert "600" in text(visitor.get(f"{path}?kanal=instagram").text), "posete profila (20 dnevno)"
+
+# 12h. Tabela po mesecima, za oglase, zbirni izvestaj, sajt, Facebook i Instagram.
+from datetime import date as _date  # noqa: E402
+import report  # noqa: E402
+assert [m[0] for m in report._months(_date(2026, 10, 15), _date(2026, 12, 3))] == ["15.–31. okt 2026", "nov 2026", "1.–3. dec 2026"]
+assert [m[0] for m in report._months(_date(2026, 1, 1), _date(2026, 12, 31))][0] == "jan 2026"
+last_month_end = YESTERDAY.replace(day=1) - timedelta(days=1)
+three_start = (last_month_end.replace(day=1) - timedelta(days=1)).replace(day=1)
+three_start = (three_start - timedelta(days=1)).replace(day=1)
+months = report._months(three_start, last_month_end)
+assert len(months) == 3 and all("–" not in m[0] for m in months), months
+fake.reach_calls.clear()
+team.post("/tim/klijent/1", data={
+    **SETTINGS, "src_fb_page": "301", "vis_fb_page": "1", "src_instagram": "401", "vis_instagram": "1",
+    "range_start": str(three_start), "range_end": str(last_month_end),
+    "s_google_ads": ["monthly"], "m_google_ads": ["spend", "clicks"],
+    "lay_meta": "1", "m_meta": ["spend", "impressions", "reach"], "s_meta": ["monthly"],
+    "lay_ukupno": "1", "m_ukupno": ["spend", "clicks"], "s_ukupno": ["monthly"],
+    "lay_ga4": "1", "m_ga4": ["sessions", "users"], "s_ga4": ["monthly"],
+    "lay_fb_page": "1", "m_fb_page": ["views", "new_follows", "followers"], "s_fb_page": ["monthly"],
+    "lay_instagram": "1", "m_instagram": ["reach", "profile_visits", "new_follows"], "s_instagram": ["monthly"],
+})
+names = [m[0] for m in months]
+day_counts = [(b - a).days + 1 for _, a, b in months]
+google_page = text(visitor.get(f"{path}?kanal=google_ads").text)
+assert "Po mesecima" in google_page and all(n in google_page for n in names), google_page[:600]
+assert "Potrošeno " + " ".join(f"{30 * d} €" for d in day_counts) in google_page, google_page
+meta_page = text(visitor.get(f"{path}?kanal=meta").text)
+assert "Prikazi " + " ".join(fmt.num(2000 * d) for d in day_counts) in meta_page, meta_page
+month_reach = {a for lvl, a in fake.reach_calls if lvl == "account"}
+assert {str(a) for _, a, _ in months} <= month_reach, fake.reach_calls  # doseg se cita posebno za svaki mesec
+combined_page = text(visitor.get(path).text)
+assert "Po mesecima" in combined_page and "Potrošeno " in combined_page
+site_page = text(visitor.get(f"{path}?kanal=ga4").text)
+assert "Posete " + " ".join(fmt.num(41 * d) for d in day_counts) in site_page, site_page
+fb_page = text(visitor.get(f"{path}?kanal=fb_page").text)
+assert "Pregledi " + " ".join(fmt.num(500 * d) for d in day_counts) in fb_page, fb_page
+assert "Novi pratioci u periodu " + " ".join(str(d) for d in day_counts) in fb_page
+assert "Ukupno pratilaca" not in fb_page.split("Po mesecima")[1], "ukupan broj pratilaca nije mesecna brojka"
+ig_page = text(visitor.get(f"{path}?kanal=instagram").text)
+assert "Posete profila " + " ".join(fmt.num(20 * d) for d in day_counts) in ig_page, ig_page
+assert "Novi pratioci u periodu " + " ".join(fmt.num(2 * d) for d in day_counts) in ig_page
+team.post("/tim/klijent/1", data={**SETTINGS, "src_fb_page": "", "src_instagram": "", "range_start": "", "range_end": ""})
 
 # Povratak na podrazumevano za dalje provere.
 DEFAULT_ADS = {"m": ["spend", "impressions", "clicks", "cpc", "conversions", "cpa"], "s": ["chart", "campaigns"]}

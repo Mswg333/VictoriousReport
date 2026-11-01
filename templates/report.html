@@ -118,6 +118,25 @@
   </section>
   {% endif %}
 
+  {% if view.monthly %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Po mesecima</h2>
+      <p class="muted">Iste brojke, razdvojene po mesecima izabranog perioda.</p>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr>{% for c in view.monthly.columns %}<th {% if not loop.first %}class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in view.monthly.rows %}
+          <tr>{% for cell in row %}<td {% if not loop.first %}class="num"{% endif %}>{% if loop.first %}<strong style="font-weight: 600">{{ cell }}</strong>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
   {% if view.terms %}
   <section class="stack gap-16">
     <div class="stack gap-4">

@@ -57,6 +57,7 @@ ADS_SECTIONS = [
     ("campaigns", "Tabela kampanja"),
     ("terms", "Pojmovi pretrage"),
     ("rankings", "Ocene oglasa (kvalitet, angažovanje, konverzije)"),
+    ("monthly", "Tabela po mesecima"),
 ]
 ADS_CHART = [
     ("clicks", "Klikovi"),
@@ -66,7 +67,7 @@ ADS_CHART = [
     ("value", "Vrednost konverzija"),
 ]
 
-COMBINED_SECTIONS = [("chart", "Grafikon po danima"), ("campaigns", "Tabela po kanalima")]
+COMBINED_SECTIONS = [("chart", "Grafikon po danima"), ("campaigns", "Tabela po kanalima"), ("monthly", "Tabela po mesecima")]
 
 SITE_METRICS = [
     ("sessions", "Posete"),
@@ -89,6 +90,7 @@ SITE_SECTIONS = [
     ("ads_campaigns", "Google Ads kampanje (iz Analytics-a)"),
     ("sources", "Posete po izvoru / mediju (npr. google / cpc)"),
     ("devices", "Posetioci po uređaju"),
+    ("monthly", "Tabela po mesecima"),
 ]
 BEHAVIOR_SECTIONS = {"funnel", "products", "events", "landing"}
 EXTRA_SITE_SECTIONS = {"transactions", "ads_campaigns", "sources", "devices"}
@@ -102,16 +104,21 @@ FB_METRICS = [
     ("views", "Pregledi"),
     ("viewers", "Gledaoci (jedinstveni)"),
     ("interactions", "Interakcije sa sadržajem"),
-    ("followers", "Pratioci stranice"),
+    ("profile_visits", "Posete stranice"),
+    ("new_follows", "Novi pratioci u periodu"),
+    ("followers", "Ukupno pratilaca"),
 ]
-FB_SECTIONS = [("chart", "Grafikon po danima")]
+MONTHLY = ("monthly", "Tabela po mesecima")
+FB_SECTIONS = [("chart", "Grafikon po danima"), MONTHLY]
 FB_CHART = [("views", "Pregledi"), ("interactions", "Interakcije")]
 IG_METRICS = [
     ("views", "Pregledi"),
     ("reach", "Doseg (broj naloga)"),
     ("interactions", "Interakcije"),
     ("link_taps", "Klikovi na link u profilu"),
-    ("followers", "Pratioci"),
+    ("profile_visits", "Posete profila"),
+    ("new_follows", "Novi pratioci u periodu"),
+    ("followers", "Ukupno pratilaca"),
 ]
 
 
@@ -122,7 +129,7 @@ def options(key):
     if key == FB:
         return FB_METRICS, FB_SECTIONS, FB_CHART
     if key == IG:
-        return IG_METRICS, [], [("views", "Pregledi")]
+        return IG_METRICS, [MONTHLY], [("views", "Pregledi")]
     metrics = ADS_METRICS if key in REACH_KEYS else [m for m in ADS_METRICS if m[0] not in ("reach", "frequency")]
     if key == COMBINED:
         return metrics, COMBINED_SECTIONS, ADS_CHART
@@ -157,7 +164,7 @@ def default(client, key):
         return {"m": ["sessions", "users", "avg_time"], "s": ["chart", "channels", "pages"], "chart": "sessions"}
     if key in (FB, IG):
         metrics, sections, charts = options(key)
-        return {"m": [m for m, _ in metrics], "s": [s for s, _ in sections], "chart": charts[0][0]}
+        return {"m": [m for m, _ in metrics], "s": [s for s, _ in sections if s != "monthly"], "chart": charts[0][0]}
     spend, clicks, conv = client.get("show_spend", 1), client.get("show_clicks", 1), client.get("show_conv", 1)
     metrics = []
     if spend:

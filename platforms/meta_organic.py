@@ -135,6 +135,8 @@ FB_METRICS = {
     "views": "page_media_view",                    # Views (zamena za page_impressions)
     "viewers": "page_total_media_view_unique",     # Viewers (zamena za page_impressions_unique)
     "interactions": "page_post_engagements",       # Content interactions
+    "profile_visits": "page_views_total",          # posete stranice (Meta nije objavila zamenu; moze da ne radi)
+    "new_follows": "page_daily_follows_unique",    # novi pratioci po danu
 }
 
 
@@ -190,7 +192,20 @@ IG_METRICS = {
     "reach": "reach",                    # jedinstveni nalozi; ne sabira se preko vise delova
     "interactions": "total_interactions",
     "link_taps": "profile_links_taps",   # klikovi na linkove u profilu
+    "profile_visits": "profile_views",
+    "new_follows": "follows_and_unfollows",  # sa podelom follow_type: FOLLOWER = novi pratioci
 }
+
+
+def _ig_value(item, key):
+    """Zbir iz odgovora; kod pratilaca samo deo FOLLOWER (bez onih koji su otpratili)."""
+    value = item.get("total_value") or {}
+    if key == "new_follows":
+        for breakdown in value.get("breakdowns") or []:
+            for result in breakdown.get("results") or []:
+                if "FOLLOWER" in (result.get("dimension_values") or []):
+                    return float(result.get("value") or 0)
+    return float(value.get("value") or 0)
 
 
 def instagram(ig_id, start, end):
@@ -204,13 +219,13 @@ def instagram(ig_id, start, end):
             try:
                 total = 0.0
                 for a, b in parts:
-                    data = meta_ads._get(
-                        f"{meta_ads.BASE}/{ig_id}/insights", token,
-                        {"metric": metric, "period": "day", "metric_type": "total_value",
-                         "since": _ts(a), "until": _ts(b, True)},
-                    )
+                    params = {"metric": metric, "period": "day", "metric_type": "total_value",
+                              "since": _ts(a), "until": _ts(b, True)}
+                    if key == "new_follows":
+                        params["breakdown"] = "follow_type"
+                    data = meta_ads._get(f"{meta_ads.BASE}/{ig_id}/insights", token, params)
                     item = (data.get("data") or [{}])[0]
-                    total += float((item.get("total_value") or {}).get("value") or 0)
+                    total += _ig_value(item, key)
                 out["totals"][key] = total
                 if key == "reach" and len(parts) > 1:
                     out["reach_partial"] = True

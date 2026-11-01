@@ -322,6 +322,54 @@ def _ads_report(client, key, label, scope, totals, spend_by_currency, value_by_c
     }, notes
 
 
+# ---------------------------------------------------------------- tabela po mesecima
+
+MAX_MONTHS = 13
+
+
+def _months(start, end):
+    """Meseci u periodu: [(oznaka, od, do)]. Nepotpun mesec dobija datume u oznaci."""
+    out, day = [], start
+    while day <= end:
+        next_month = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
+        last = min(end, next_month - timedelta(days=1))
+        name = f"{fmt.MONTHS[day.month - 1]} {day.year}"
+        if day.day != 1 or last != next_month - timedelta(days=1):
+            name = f"{day.day}.–{last.day}. {name}" if day != last else f"{day.day}. {name}"
+        out.append((name, day, last))
+        day = next_month
+    return out[-MAX_MONTHS:]
+
+
+def _monthly(start, end, metrics, month_values, notes):
+    """Tabela: red po brojci, kolona po mesecu. month_values(od, do) -> {brojka: tekst}."""
+    months = _months(start, end)
+    if len(months) < 1:
+        return None
+    columns, rows = [], {m: [] for m, _ in metrics}
+    for name, a, b in months:
+        try:
+            values = month_values(a, b)
+        except SourceError as exc:
+            notes.append(f"Tabela po mesecima, {name}: {exc}")
+            values = {}
+        columns.append(name)
+        for metric, _ in metrics:
+            value = values.get(metric)
+            rows[metric].append(value if value is not None else "–")
+    return {
+        "columns": ["Brojka"] + columns,
+        "rows": [[label] + rows[metric] for metric, label in metrics],
+    }
+
+
+def _ads_monthly(client, key, lay, start, end, month_values, notes):
+    kind = fmt.CONV_KINDS.get(client["conv_kind"], fmt.CONV_KINDS["upit"])
+    labels = _ads_labels(kind, key)
+    metrics = [(m, labels[m][1]) for m, _ in layout.options(key)[0] if m in lay["m"] and m != "budget"]
+    return _monthly(start, end, metrics, month_values, notes) if metrics else None
+
+
 # ---------------------------------------------------------------- jedan kanal
 
 def _single(client, mod, source, start, end, data_range):
@@ -376,6 +424,23 @@ def _single(client, mod, source, start, end, data_range):
             ]
         except SourceError as exc:
             notes.append(f"Pojmovi pretrage nisu učitani: {exc}")
+
+    if "monthly" in lay["s"]:
+        want_reach = mod.KEY in layout.REACH_KEYS and lay["m"] & {"reach", "frequency"}
+        kind = fmt.CONV_KINDS.get(client["conv_kind"], fmt.CONV_KINDS["upit"])
+
+        def month_values(a, b):
+            part = platforms.summarize(payload, a, b, client["conv_kind"])["totals"]
+            month_reach = None
+            if want_reach:
+                data = platforms.reach(source["account_id"], a, b)
+                month_reach = (data["reach"], data["frequency"])
+            return _ads_values(
+                kind, {currency: part["spend"]}, part["impressions"], part["clicks"], part["conversions"],
+                {currency: part["value"]}, month_reach, part["extra"], part["result_kinds"],
+            )
+
+        report["monthly"] = _ads_monthly(client, mod.KEY, lay, start, end, month_values, notes)
 
     if mod.KEY == meta_ads.KEY and "rankings" in lay["s"]:
         try:
@@ -450,6 +515,22 @@ def _combined(client, sources, start, end, data_range):
         "Kanal",
         rows,
     )
+    lay = layout.get(client, COMBINED)
+    if "monthly" in lay["s"]:
+        kind = fmt.CONV_KINDS.get(client["conv_kind"], fmt.CONV_KINDS["upit"])
+
+        def month_values(a, b):
+            spend, value, sums = {}, {}, {"impressions": 0, "clicks": 0, "conversions": 0.0}
+            for _, src, payload in loaded:
+                part = platforms.summarize(payload, a, b, client["conv_kind"])["totals"]
+                currency = src["currency"] or "EUR"
+                spend[currency] = spend.get(currency, 0) + part["spend"]
+                value[currency] = value.get(currency, 0) + part["value"]
+                for k in sums:
+                    sums[k] += part[k]
+            return _ads_values(kind, spend, sums["impressions"], sums["clicks"], round(sums["conversions"], 2), value)
+
+        report["monthly"] = _ads_monthly(client, COMBINED, lay, start, end, month_values, more)
     return report, notes + more
 
 
@@ -466,6 +547,18 @@ SITE_LABELS = {
 }
 
 
+def _site_values(data):
+    return {
+        "sessions": fmt.num(data["sessions"]),
+        "users": fmt.num(data["users"]),
+        "new_users": fmt.num(data["new_users"]),
+        "avg_time": fmt.duration(data["avg_seconds"]),
+        "engagement": fmt.percent(data["engagement"]),
+        "page_views": fmt.num(data["page_views"]),
+        "key_events": fmt.conv(data["key_events"]),
+    }
+
+
 def _site(client, source, start, end):
     lay = layout.get(client, ga4.KEY)
     shown = [m for m, _ in layout.SITE_METRICS if m in lay["m"]]
@@ -477,15 +570,7 @@ def _site(client, source, start, end):
 
     sessions = data["sessions"]
     when = _phrase(start, end)
-    values = {
-        "sessions": fmt.num(sessions),
-        "users": fmt.num(data["users"]),
-        "new_users": fmt.num(data["new_users"]),
-        "avg_time": fmt.duration(data["avg_seconds"]),
-        "engagement": fmt.percent(data["engagement"]),
-        "page_views": fmt.num(data["page_views"]),
-        "key_events": fmt.conv(data["key_events"]),
-    }
+    values = _site_values(data)
     told = set()
     if not sessions:
         hero = f"{when} Analytics nije zabeležio posete sajtu."
@@ -546,6 +631,12 @@ def _site(client, source, start, end):
             notes.append(f"Ponašanje posetilaca nije učitano: {exc}")
     if lay["s"] & layout.EXTRA_SITE_SECTIONS:
         _site_extras(view, lay["s"], source["account_id"], start, end, notes)
+    if "monthly" in lay["s"] and shown:
+        labels = dict(layout.SITE_METRICS)
+        view["monthly"] = _monthly(
+            start, end, [(m, labels[m]) for m in shown],
+            lambda a, b: _site_values(ga4.report(source["account_id"], a, b)), notes,
+        )
     return view, notes
 
 
@@ -736,7 +827,9 @@ SOCIAL_LABELS = {
     "reach": "Naloga je videlo sadržaj (doseg)",
     "interactions": "Interakcija sa sadržajem",
     "link_taps": "Klikova na link u profilu",
-    "followers": "Pratilaca danas",
+    "profile_visits": "Poseta profilu",
+    "new_follows": "Novih pratilaca u periodu",
+    "followers": "Ukupno pratilaca danas",
 }
 
 
@@ -789,8 +882,20 @@ def _social(client, key, source, start, end):
         title, none = ("Pregledi", "pregleda") if metric == "views" else ("Interakcije", "interakcija")
         chart = _chart(series, lambda v: fmt.num(v), title, none)
 
+    monthly = None
+    if "monthly" in lay["s"]:
+        fetch = meta_organic.facebook if key == meta_organic.FB_KEY else meta_organic.instagram
+        month_metrics = [(m, labels[m]) for m in shown if m != "followers"]
+
+        def month_values(a, b):
+            part = fetch(source["account_id"], a, b)["totals"]
+            return {m: fmt.num(part[m]) for m, _ in month_metrics if m in part}
+
+        monthly = _monthly(start, end, month_metrics, month_values, notes) if month_metrics else None
+
     return {
         "kind": "social",
+        "monthly": monthly,
         "hero": hero,
         "figures": figures,
         "chart": chart,

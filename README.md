@@ -72,8 +72,12 @@ Meta nalozi), a svaki dobija svoj izveštaj:
   (`page_total_media_view_unique`), interakcije (`page_post_engagements`),
   broj pratilaca i grafikon po danima. Klikove na link Meta posle ukidanja
   starih metrika više ne daje preko API-ja.
-- **Instagram:** pregledi, doseg, interakcije, klikovi na link u profilu i broj
-  pratilaca. Za periode duže od 30 dana doseg je zbir po 30 dana.
+  Uz to posete stranice (`page_views_total`; Meta nije objavila zamenu, pa
+  može prestati da radi) i novi pratioci u periodu (`page_daily_follows_unique`).
+- **Instagram:** pregledi, doseg, interakcije, klikovi na link u profilu,
+  posete profila (`profile_views`), novi pratioci u periodu
+  (`follows_and_unfollows`, deo FOLLOWER) i ukupan broj pratilaca. Za periode
+  duže od 30 dana doseg je zbir po 30 dana.
 
 Meta veza za ovo mora imati i dozvole `pages_show_list`,
 `pages_read_engagement`, `read_insights`, `instagram_basic` i
@@ -81,6 +85,14 @@ Meta veza za ovo mora imati i dozvole `pages_show_list`,
 se posle dodavanja dozvola nalog povezuje ponovo. Tokeni stranica se drže samo
 u memoriji, ne u bazi. Ako jedna metrika ne radi, ostale se prikazuju, a tim u
 pregledu vidi koja nije učitana.
+
+## Tabela po mesecima
+
+Svaki izveštaj (kanal oglašavanja, zbirni, sajt, Facebook, Instagram) ima deo
+„Tabela po mesecima“: iste brojke koje su uključene za taj izveštaj, po jedna
+kolona za svaki mesec izabranog perioda (najviše 13). Nepotpun mesec ima datume
+u nazivu kolone („15.–31. okt 2026“). Doseg i jedinstveni gledaoci se čitaju
+posebno za svaki mesec, jer se ne mogu sabrati iz dana.
 
 ## Logo klijenta
 
