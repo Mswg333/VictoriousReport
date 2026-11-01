@@ -146,7 +146,7 @@ def fetch_daily(token, account_id, start, end):
     rows = search(
         token,
         account_id,
-        "SELECT campaign.id, campaign.name, segments.date, metrics.cost_micros, "
+        "SELECT campaign.id, campaign.name, campaign.advertising_channel_type, segments.date, metrics.cost_micros, "
         "metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value, "
         "metrics.interactions "
         "FROM campaign "
@@ -158,18 +158,23 @@ def fetch_daily(token, account_id, start, end):
         day = row.get("segments", {}).get("date")
         if not day:
             continue
+        impressions, interactions = int(metrics.get("impressions", 0)), int(metrics.get("interactions", 0))
+        # interakcije: klikovi, a kod Performance Max-a i Display-a i angazovanja
+        extra = {"interactions": interactions}
+        if campaign.get("advertisingChannelType") == "SEARCH":
+            # za "Total: Search campaigns" (interaction rate samo Search kampanja)
+            extra.update({"search_impressions": impressions, "search_interactions": interactions})
         out.append(
             [
                 day,
                 str(campaign.get("id", "")),
                 campaign.get("name", ""),
                 int(metrics.get("costMicros", 0)) / 1_000_000,
-                int(metrics.get("impressions", 0)),
+                impressions,
                 int(metrics.get("clicks", 0)),
                 float(metrics.get("conversions", 0)),
                 float(metrics.get("conversionsValue", 0)),
-                # interakcije: klikovi, a kod Performance Max-a i Display-a i angazovanja
-                {"interactions": int(metrics.get("interactions", 0))},
+                extra,
             ]
         )
     return {"start": start.isoformat(), "end": end.isoformat(), "rows": out}

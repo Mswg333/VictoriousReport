@@ -52,7 +52,7 @@ def default_range():
 
 def _keys(platform, account_id, start, end):
     # "v2": od kad redovi imaju i vrednost konverzija; stariji zapamceni odgovori se ne koriste.
-    suffix = f"{platform}:{account_id}:v4:{start.isoformat()}:{end.isoformat()}"
+    suffix = f"{platform}:{account_id}:v5:{start.isoformat()}:{end.isoformat()}"
     return f"daily:{suffix}", f"daily_error:{suffix}"
 
 

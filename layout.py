@@ -51,6 +51,8 @@ META_LABELS = {"clicks": "Klikovi na link", "cpc": "Cena po kliku na link"}
 GOOGLE_EXTRA = [
     ("interactions", "Interakcije", "ctr"),
     ("interaction_rate", "Interaction rate (interakcije / prikazi)", "interactions"),
+    ("avg_cost", "Prosečna cena interakcije (Avg. cost)", "cpc"),
+    ("search_interaction_rate", "Interaction rate samo Search kampanja", "interaction_rate"),
 ]
 ADS_SECTIONS = [
     ("chart", "Grafikon po danima"),

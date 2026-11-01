@@ -147,6 +147,9 @@ def _ads_values(kind, spend_by_currency, impressions, clicks, conversions, value
         "interactions": fmt.num(interactions) if "interactions" in extra else None,
         "interaction_rate": fmt.percent(interactions / impressions, 2)
         if "interactions" in extra and impressions else None,
+        "avg_cost": per(interactions) if "interactions" in extra else None,
+        "search_interaction_rate": fmt.percent(extra["search_interactions"] / extra["search_impressions"], 2)
+        if extra.get("search_impressions") else None,
         "results": f"{fmt.conv(results)} {fmt.plural(results, meta_ads.RESULT_FORMS[result])}" if result else None,
         "cost_per_result": per(results) if result else None,
         "budget": budget,
@@ -196,6 +199,8 @@ def _ads_labels(kind, key=None):
         "cost_per_landing": ("Cena po pregledu odredišne strane", "Cena pregleda"),
         "interactions": ("Interakcija sa oglasom", "Interakcije"),
         "interaction_rate": ("Interaction rate (interakcije / prikazi)", "Interaction rate"),
+        "avg_cost": ("Prosečna cena interakcije (Avg. cost)", "Avg. cost"),
+        "search_interaction_rate": ("Interaction rate samo Search kampanja", "Interaction rate (Search)"),
     }
     if key == meta_ads.KEY:  # kod Mete su "klikovi" klikovi na link
         labels["clicks"] = ("Klikova na link", "Klikovi na link")
@@ -708,26 +713,30 @@ def _site_extras(view, sections, property_id, start, end, notes):
     if "sources" in sections:
         data = load("sources", "Posete po izvoru", ga4.sources)
         if data and data["rows"]:
+            total_sessions = sum(r["sessions"] for r in data["rows"]) or 1
             view["sources"] = [
                 {
                     "name": r["name"],
                     "sessions": fmt.num(r["sessions"]),
+                    "share": fmt.percent(r["sessions"] / total_sessions, 2),
+                    "users": fmt.num(r.get("users", 0)),
                     "engaged": fmt.num(r["engaged"]),
                     "time": fmt.duration(r["engagement_seconds"] / r["sessions"]) if r["sessions"] else "–",
                     "key_events": fmt.conv(r["key_events"]),
                 }
-                for r in data["rows"]
+                for r in data["rows"][:10]
             ]
 
     if "devices" in sections:
         data = load("devices", "Posetioci po uređaju", ga4.devices)
         if data and data["rows"]:
-            total_users = sum(r["users"] for r in data["rows"]) or 1
+            # udeo kao u Analytics-u: od ukupnog broja korisnika ("Total"), ne od zbira redova
+            total_users = data.get("total_users") or sum(r["users"] for r in data["rows"]) or 1
             view["devices"] = [
                 {
                     "name": ga4.DEVICES.get(r["name"], r["name"]),
                     "users": fmt.num(r["users"]),
-                    "share": fmt.percent(r["users"] / total_users),
+                    "share": fmt.percent(r["users"] / total_users, 2),
                     "new_users": fmt.num(r["new_users"]),
                     "engagement": fmt.percent(r["engagement"]),
                     "key_events": fmt.conv(r["key_events"]),

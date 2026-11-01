@@ -246,10 +246,10 @@
     </div>
     <div class="table-box">
       <table>
-        <thead><tr><th>Izvor / medij</th><th class="num">Posete</th><th class="num">Angažovane posete</th><th class="num">Prosečno trajanje</th><th class="num">Ključni događaji</th></tr></thead>
+        <thead><tr><th>Izvor / medij</th><th class="num">Posete</th><th class="num">Udeo u posetama</th><th class="num">Korisnici</th><th class="num">Angažovane posete</th><th class="num">Prosečno trajanje</th><th class="num">Ključni događaji</th></tr></thead>
         <tbody>
           {% for r in view.sources %}
-          <tr><td><strong style="font-weight: 600">{{ r.name }}</strong></td><td class="num">{{ r.sessions }}</td><td class="num">{{ r.engaged }}</td><td class="num">{{ r.time }}</td><td class="num">{{ r.key_events }}</td></tr>
+          <tr><td><strong style="font-weight: 600">{{ r.name }}</strong></td><td class="num">{{ r.sessions }}</td><td class="num">{{ r.share }}</td><td class="num">{{ r.users }}</td><td class="num">{{ r.engaged }}</td><td class="num">{{ r.time }}</td><td class="num">{{ r.key_events }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

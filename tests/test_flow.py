@@ -479,8 +479,8 @@ for expected in (
     "Transakcije", "2 transakcije, ukupno 33.480 RSD.", "36137", "29.10.2026.", "15.480 RSD", "35810",
     "Google Ads kampanje (iz Analytics-a)", "Performance Max - Zlatni nakit", "17.974 RSD", "11.983 RSD", "2.067",
     "4.400 RSD", "0,24x", "Ukupno 2,5 28.744 RSD 11.498 RSD 3.402",
-    "Posete po izvoru", "google / cpc", "8.147", "3.019", "0 min 21 s", "google / organic",
-    "Posetioci po uređaju", "Mobilni telefon", "5.895", "93,0 %", "Računar", "Tablet",
+    "Posete po izvoru", "google / cpc", "8.147", "95,28 %", "6.900", "3.019", "0 min 21 s", "google / organic",
+    "Posetioci po uređaju", "Mobilni telefon", "5.895", "92,50 %", "6,12 %", "0,85 %", "Računar", "Tablet",
 ):
     assert expected in plain, expected
 assert "(not set)" not in plain and "(organic)" not in plain
@@ -496,6 +496,15 @@ team.post("/tim/klijent/1", data={
 })
 plain = text(visitor.get(f"{path}?kanal=google_ads").text)
 assert "3.300" in plain and "Interaction rate (interakcije / prikazi)" in plain and "2,75 %" in plain, plain[:800]
+# Avg. cost (trosak / interakcije) i interaction rate samo Search kampanja, kao u Google Ads koloni.
+team.post("/tim/klijent/1", data={
+    **SETTINGS, "m_google_ads": ["clicks", "avg_cost", "search_interaction_rate"], "s_google_ads": ["campaigns"],
+})
+plain = text(visitor.get(f"{path}?kanal=google_ads").text)
+assert "Prosečna cena interakcije (Avg. cost)" in plain and "0,27 €" in plain, plain[:1500]
+assert "Interaction rate samo Search kampanja" in plain and "4,00 %" in plain, plain[:1500]
+row_pmax = plain.split("Performance Max")[1][:80]
+assert "–" in row_pmax, row_pmax  # PMax nije Search kampanja
 assert "Interaction rate" not in text(team.get("/tim/klijent/1").text).split("Šta klijent vidi u izveštaju Meta Ads")[1].split("Ocene oglasa")[0]
 
 # Facebook stranica i Instagram (organski, Meta Business Suite > Insights).
@@ -574,6 +583,11 @@ fake.meta_granted = ["ads_read", "pages_show_list", "pages_read_engagement", "re
                      "instagram_manage_insights"]
 meta_organic._diag["at"] = 0
 team.post("/tim/klijent/1", data={**SETTINGS, "src_fb_page": "", "src_instagram": ""})
+
+# Granice dana za Metu su po beogradskom vremenu (oktobar: leto, CEST), ne po vremenu servera.
+from datetime import date as _d, datetime as _dt, timezone as _tz  # noqa: E402
+assert _dt.fromtimestamp(meta_organic._ts(_d(2026, 10, 1)), _tz.utc).isoformat() == "2026-09-30T22:00:00+00:00"
+assert _dt.fromtimestamp(meta_organic._ts(_d(2026, 10, 31), True), _tz.utc).isoformat() == "2026-10-31T23:00:00+00:00"
 
 # 12h. Tabela po mesecima, za oglase, zbirni izvestaj, sajt, Facebook i Instagram.
 from datetime import date as _date  # noqa: E402

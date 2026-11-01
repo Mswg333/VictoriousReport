@@ -274,8 +274,12 @@ def behavior(property_id, start, end):
 # bez e-commerce-a ili GA4 bez veze sa Google Ads-om) ne obori ostale.
 
 
-def _run(property_id, start, end, dimensions, metrics, order=None, limit=50, desc=True):
-    """Jedan GA4 izvestaj: (redovi, valuta). Red je ([dimenzije], [brojke])."""
+def _run(property_id, start, end, dimensions, metrics, order=None, limit=50, desc=True, totals=None):
+    """Jedan GA4 izvestaj: (redovi, valuta). Red je ([dimenzije], [brojke]).
+
+    totals: prazna lista koju funkcija popuni zbirom iz Analytics-a ("Total" red),
+    jer se korisnici po uredjajima ne sabiraju (isti covek moze koristiti dva uredjaja).
+    """
     payload = {
         "dateRanges": [{"startDate": start.isoformat(), "endDate": end.isoformat()}],
         "dimensions": [{"name": d} for d in dimensions],
@@ -286,6 +290,8 @@ def _run(property_id, start, end, dimensions, metrics, order=None, limit=50, des
         kind = "metric" if order in metrics else "dimension"
         key = "metricName" if kind == "metric" else "dimensionName"
         payload["orderBys"] = [{kind: {key: order}, "desc": desc}]
+    if totals is not None:
+        payload["metricAggregations"] = ["TOTAL"]
     data = _request("POST", f"{DATA_BASE}/properties/{normalize_id(property_id)}:runReport", _token(), json=payload)
     rows = []
     for row in data.get("rows", []):
@@ -298,6 +304,12 @@ def _run(property_id, start, end, dimensions, metrics, order=None, limit=50, des
                 nums.append(0.0)
         nums += [0.0] * (len(metrics) - len(nums))  # Google izostavlja prazne vrednosti
         rows.append((dims, nums))
+    if totals is not None:
+        for v in (data.get("totals") or [{}])[0].get("metricValues", []):
+            try:
+                totals.append(float(v.get("value", 0)))
+            except (TypeError, ValueError):
+                totals.append(0.0)
     return rows, data.get("metadata", {}).get("currencyCode") or ""
 
 
@@ -362,19 +374,19 @@ def sources(property_id, start, end):
     def fetch():
         rows, currency = _run(
             property_id, start, end, ["sessionSourceMedium"],
-            ["sessions", "engagedSessions", "userEngagementDuration", "keyEvents", "totalRevenue"],
-            order="sessions", limit=10,
+            ["sessions", "engagedSessions", "userEngagementDuration", "keyEvents", "totalRevenue", "totalUsers"],
+            order="sessions", limit=250,  # svi izvori, da bi udeo bio od ukupnih poseta
         )
         return {
             "currency": currency,
             "rows": [
                 {"name": d[0], "sessions": int(n[0]), "engaged": int(n[1]), "engagement_seconds": n[2],
-                 "key_events": n[3], "revenue": n[4]}
+                 "key_events": n[3], "revenue": n[4], "users": int(n[5])}
                 for d, n in rows
             ],
         }
 
-    return _cached_report("sources", property_id, start, end, fetch)
+    return _cached_report("sources2", property_id, start, end, fetch)
 
 
 DEVICES = {"mobile": "Mobilni telefon", "desktop": "Računar", "tablet": "Tablet", "smart tv": "Televizor"}
@@ -384,13 +396,15 @@ def devices(property_id, start, end):
     """Posetioci po vrsti uredjaja."""
 
     def fetch():
+        total = []
         rows, currency = _run(
             property_id, start, end, ["deviceCategory"],
             ["activeUsers", "newUsers", "engagementRate", "keyEvents", "totalRevenue"],
-            order="activeUsers", limit=10,
+            order="activeUsers", limit=10, totals=total,
         )
         return {
             "currency": currency,
+            "total_users": int(total[0]) if total else 0,
             "rows": [
                 {"name": d[0], "users": int(n[0]), "new_users": int(n[1]), "engagement": n[2],
                  "key_events": n[3], "revenue": n[4]}
@@ -398,7 +412,7 @@ def devices(property_id, start, end):
             ],
         }
 
-    return _cached_report("devices", property_id, start, end, fetch)
+    return _cached_report("devices2", property_id, start, end, fetch)
 
 
 def list_properties():

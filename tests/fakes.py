@@ -14,7 +14,8 @@ import json
 import time
 import re
 import zipfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -176,7 +177,7 @@ class FakeNet:
             for day in days_between(first, last):
                 rows.append(
                     {
-                        "campaign": {"id": "1", "name": "Pretraga: kuhinje"},
+                        "campaign": {"id": "1", "name": "Pretraga: kuhinje", "advertisingChannelType": "SEARCH"},
                         "segments": {"date": day},
                         "metrics": {
                             "costMicros": "20000000", "impressions": "1000", "clicks": "40",
@@ -186,7 +187,7 @@ class FakeNet:
                 )
                 rows.append(
                     {
-                        "campaign": {"id": "2", "name": "Performance Max"},
+                        "campaign": {"id": "2", "name": "Performance Max", "advertisingChannelType": "PERFORMANCE_MAX"},
                         "segments": {"date": day},
                         # Google izostavlja polja koja su nula
                         "metrics": {"costMicros": "10000000", "impressions": "3000", "clicks": "10", "interactions": "70"},
@@ -270,12 +271,16 @@ class FakeNet:
         elif dims == ["sessionGoogleAdsCampaignName"]:
             rows = [row(["Stara kampanja"], 2, 1000, 100, 10, 0, 0)]
         elif dims == ["sessionSourceMedium"]:
-            rows = [row(["google / cpc"], 8147, 3019, 171087, 545), row(["google / organic"], 404, 295, 33128, 18)]
+            rows = [row(["google / cpc"], 8147, 3019, 171087, 545, 0, 6900), row(["google / organic"], 404, 295, 33128, 18, 0, 380)]
         elif dims == ["deviceCategory"]:
             rows = [row(["mobile"], 5895, 5419, 0.3753, 581), row(["desktop"], 390, 350, 0.5913, 6), row(["tablet"], 54, 53, 0.3333, 0)]
         else:
             raise AssertionError(dims)
-        return FakeResponse(200, {"rows": rows, "metadata": meta})
+        out = {"rows": rows, "metadata": meta}
+        if req.get("metricAggregations") == ["TOTAL"]:
+            assert dims == ["deviceCategory"], dims
+            out["totals"] = [{"metricValues": [{"value": "6373"}, {"value": "5822"}]}]
+        return FakeResponse(200, out)
 
     def _analytics_behavior(self, reports):
         """Ponasanje posetilaca: put do kupovine, proizvodi, dogadjaji, ulazne strane."""
@@ -453,7 +458,8 @@ class FakeNet:
             if metric == "page_views_total" and self.fb_views_broken:
                 return FakeResponse(400, {"error": {"message": "(#100) The value must be a valid insights metric", "code": 100}})
             per_day = per_days[metric]
-            start = date.fromtimestamp(since)
+            start = datetime.fromtimestamp(since, ZoneInfo("Europe/Belgrade")).date()
+            assert datetime.fromtimestamp(since, ZoneInfo("Europe/Belgrade")).hour == 0, "dan pocinje u ponoc po nasem vremenu"
             values = [{"value": per_day, "end_time": f"{start + timedelta(days=i)}T07:00:00+0000"} for i in range(days)]
             return FakeResponse(200, {"data": [{"name": metric, "period": "day", "values": values}]})
         assert path.endswith("/401/insights"), path

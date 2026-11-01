@@ -9,9 +9,11 @@ instagram_manage_insights.
 Tokeni stranica se nikad ne upisuju u bazu ni u kes; drze se samo u memoriji.
 """
 import hashlib
+import os
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from platforms import meta_ads
 from platforms.base import LIST_TTL, SourceError, cached, data_ttl
@@ -230,10 +232,15 @@ def _chunks(start, end, days):
         start = stop + timedelta(days=1)
 
 
+# Granice dana po nasem vremenu (kao u Meta Business Suite-u), a ne po vremenu servera (UTC).
+TIMEZONE = ZoneInfo(os.environ.get("REPORT_TIMEZONE", "Europe/Belgrade"))
+
+
 def _ts(day, end_of_day=False):
-    """Unix vreme pocetka (ili kraja) dana, kako ga Meta ocekuje za since/until."""
-    seconds = int(time.mktime(day.timetuple()))
-    return seconds + 86400 if end_of_day else seconds
+    """Unix vreme pocetka dana (ili pocetka sledeceg dana), po TIMEZONE, za since/until."""
+    if end_of_day:
+        day = day + timedelta(days=1)
+    return int(datetime(day.year, day.month, day.day, tzinfo=TIMEZONE).timestamp())
 
 
 # ---------------------------------------------------------------- Facebook stranica
