@@ -268,6 +268,139 @@ def behavior(property_id, start, end):
     return cached(f"ga4:{property_id}:behavior:{start.isoformat()}:{end.isoformat()}", data_ttl(end), fetch)
 
 
+# ---------------------------------------------------------------- dodatni izvestaji
+#
+# Svaki se cita posebnim zahtevom i pamti posebno, da greska u jednom (npr. sajt
+# bez e-commerce-a ili GA4 bez veze sa Google Ads-om) ne obori ostale.
+
+
+def _run(property_id, start, end, dimensions, metrics, order=None, limit=50, desc=True):
+    """Jedan GA4 izvestaj: (redovi, valuta). Red je ([dimenzije], [brojke])."""
+    payload = {
+        "dateRanges": [{"startDate": start.isoformat(), "endDate": end.isoformat()}],
+        "dimensions": [{"name": d} for d in dimensions],
+        "metrics": [{"name": m} for m in metrics],
+        "limit": limit,
+    }
+    if order:
+        kind = "metric" if order in metrics else "dimension"
+        key = "metricName" if kind == "metric" else "dimensionName"
+        payload["orderBys"] = [{kind: {key: order}, "desc": desc}]
+    data = _request("POST", f"{DATA_BASE}/properties/{normalize_id(property_id)}:runReport", _token(), json=payload)
+    rows = []
+    for row in data.get("rows", []):
+        dims = [v.get("value", "") for v in row.get("dimensionValues", [])]
+        nums = []
+        for v in row.get("metricValues", []):
+            try:
+                nums.append(float(v.get("value", 0)))
+            except (TypeError, ValueError):
+                nums.append(0.0)
+        nums += [0.0] * (len(metrics) - len(nums))  # Google izostavlja prazne vrednosti
+        rows.append((dims, nums))
+    return rows, data.get("metadata", {}).get("currencyCode") or ""
+
+
+def _cached_report(name, property_id, start, end, fetch):
+    key = f"ga4:{normalize_id(property_id)}:{name}:{start.isoformat()}:{end.isoformat()}"
+    return cached(key, data_ttl(end), fetch)
+
+
+def transactions(property_id, start, end):
+    """Kupovine u periodu: broj transakcije, datum, broj kupovina, iznos (najnovije prve)."""
+
+    def fetch():
+        rows, currency = _run(
+            property_id, start, end, ["transactionId", "date"], ["ecommercePurchases", "purchaseRevenue"],
+            order="date", limit=250,
+        )
+        return {
+            "currency": currency,
+            "rows": [
+                {"id": d[0], "date": d[1], "purchases": int(n[0]), "revenue": n[1]}
+                for d, n in rows
+                if d[0] and d[0] != "(not set)"
+            ],
+        }
+
+    return _cached_report("transactions", property_id, start, end, fetch)
+
+
+ADS_METRICS = ["keyEvents", "advertiserAdCost", "advertiserAdClicks", "advertiserAdCostPerClick",
+               "totalRevenue", "returnOnAdSpend"]
+
+
+def ads_campaigns(property_id, start, end):
+    """Google Ads kampanje kako ih vidi Analytics (Advertising > Key event performance)."""
+
+    def fetch():
+        try:
+            rows, currency = _run(property_id, start, end, ["googleAdsCampaignName"], ADS_METRICS, order="advertiserAdCost")
+        except SourceError:
+            # starija svojstva poznaju samo dimenziju sesije
+            rows, currency = _run(
+                property_id, start, end, ["sessionGoogleAdsCampaignName"], ADS_METRICS, order="advertiserAdCost"
+            )
+        return {
+            "currency": currency,
+            "rows": [
+                {
+                    "name": d[0], "key_events": n[0], "cost": n[1], "clicks": int(n[2]),
+                    "cpc": n[3], "revenue": n[4], "roas": n[5],
+                }
+                for d, n in rows
+                if d[0] and d[0] not in ("(not set)", "(organic)", "(direct)")
+            ],
+        }
+
+    return _cached_report("ads_campaigns", property_id, start, end, fetch)
+
+
+def sources(property_id, start, end):
+    """Posete po izvoru / mediju (npr. google / cpc)."""
+
+    def fetch():
+        rows, currency = _run(
+            property_id, start, end, ["sessionSourceMedium"],
+            ["sessions", "engagedSessions", "userEngagementDuration", "keyEvents", "totalRevenue"],
+            order="sessions", limit=10,
+        )
+        return {
+            "currency": currency,
+            "rows": [
+                {"name": d[0], "sessions": int(n[0]), "engaged": int(n[1]), "engagement_seconds": n[2],
+                 "key_events": n[3], "revenue": n[4]}
+                for d, n in rows
+            ],
+        }
+
+    return _cached_report("sources", property_id, start, end, fetch)
+
+
+DEVICES = {"mobile": "Mobilni telefon", "desktop": "Računar", "tablet": "Tablet", "smart tv": "Televizor"}
+
+
+def devices(property_id, start, end):
+    """Posetioci po vrsti uredjaja."""
+
+    def fetch():
+        rows, currency = _run(
+            property_id, start, end, ["deviceCategory"],
+            ["activeUsers", "newUsers", "engagementRate", "keyEvents", "totalRevenue"],
+            order="activeUsers", limit=10,
+        )
+        return {
+            "currency": currency,
+            "rows": [
+                {"name": d[0], "users": int(n[0]), "new_users": int(n[1]), "engagement": n[2],
+                 "key_events": n[3], "revenue": n[4]}
+                for d, n in rows
+            ],
+        }
+
+    return _cached_report("devices", property_id, start, end, fetch)
+
+
 def list_properties():
     """GA4 property-ji koje povezani nalog vidi: [{"id", "name"}].
 

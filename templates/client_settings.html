@@ -13,6 +13,7 @@
       {% endfor %}
     </div>
   </fieldset>
+  {% if lay.sections %}
   <fieldset class="stack gap-8">
     <legend class="field">Delovi izveštaja</legend>
     <div class="pick-grid">
@@ -27,6 +28,7 @@
       {% for c in lay.charts %}<option value="{{ c.value }}" {% if c.on %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
     </select>
   </div>
+  {% endif %}
 </details>
 {% endmacro %}
 
@@ -65,7 +67,7 @@
             <option value="">Klijent nema ovaj kanal</option>
             {% set ns = namespace(found=false) %}
             {% for a in ch.accounts %}
-            <option value="{{ a.id }}" {% if ch.source and ch.source.account_id == a.id %}selected{% set ns.found = true %}{% endif %}>{{ a.name }} ({{ account_label(ch.key, a.id) }}, {{ a.currency }})</option>
+            <option value="{{ a.id }}" {% if ch.source and ch.source.account_id == a.id %}selected{% set ns.found = true %}{% endif %}>{{ a.name }} ({{ account_label(ch.key, a.id) }}{% if a.currency %}, {{ a.currency }}{% endif %})</option>
             {% endfor %}
             {% if ch.source and not ns.found %}
             <option value="{{ ch.source.account_id }}" selected>{{ ch.source.account_name }} ({{ account_label(ch.key, ch.source.account_id) }}, više nije u listi)</option>

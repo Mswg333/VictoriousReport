@@ -39,7 +39,7 @@ import google_auth  # noqa: E402
 import migrate  # noqa: E402
 import platforms  # noqa: E402
 import report  # noqa: E402
-from platforms import base, ga4, google_ads, meta_ads, microsoft_ads, tiktok_ads  # noqa: E402
+from platforms import base, ga4, google_ads, meta_ads, meta_organic, microsoft_ads, tiktok_ads  # noqa: E402
 from platforms.base import SourceError  # noqa: E402
 
 ON_RENDER = bool(os.environ.get("RENDER"))
@@ -572,6 +572,9 @@ def clients():
             grand_total[currency] = grand_total.get(currency, 0) + totals["spend"]
             clicks += totals["clicks"]
             conversions += totals["conversions"]
+        for kind in meta_organic.KEYS:
+            if kind in sources:
+                channels.append(meta_organic.NAMES[kind])
         if ga4.KEY in sources:
             channels.append("Analytics")
         items.append(
@@ -671,6 +674,28 @@ def save_channels(client_id, form):
             continue
         set_source(client_id, mod.KEY, account["id"], account["name"], account["currency"], visible)
 
+    for kind in meta_organic.KEYS:
+        field = f"src_{kind}"
+        if field not in form:
+            continue
+        chosen = form.get(field, "").strip()
+        visible = bool(form.get(f"vis_{kind}"))
+        existing = current.get(kind)
+        if not chosen:
+            set_source(client_id, kind, "", "", "", False)
+        elif existing and existing["account_id"] == chosen:
+            set_source(client_id, kind, chosen, existing["account_name"], "", visible)
+        else:
+            try:
+                account = next((a for a in meta_organic.accounts(kind) if a["id"] == chosen), None)
+            except SourceError as exc:
+                problems.append(f"{meta_organic.NAMES[kind]}: lista nije dostupna ({exc})")
+                continue
+            if not account:
+                problems.append(f"{meta_organic.NAMES[kind]}: izabrani profil nije među onima koje portal vidi")
+                continue
+            set_source(client_id, kind, account["id"], account["name"], "", visible)
+
     if "src_ga4" in form:
         property_id = ga4.normalize_id(form.get("src_ga4"))[:20]
         set_source(client_id, ga4.KEY, property_id, "", "", bool(form.get("vis_ga4")))
@@ -686,7 +711,7 @@ def client_settings(client_id):
         if conv_kind not in fmt.CONV_KINDS:
             conv_kind = "upit"
         name = request.form.get("name", "").strip()[:120] or client["name"]
-        keys = [mod.KEY for mod in platforms.ADS] + [layout.COMBINED, layout.SITE]
+        keys = [mod.KEY for mod in platforms.ADS] + list(meta_organic.KEYS) + [layout.COMBINED, layout.SITE]
         db.execute(
             "UPDATE portal_clients SET name = ?, show_combined = ?, conv_kind = ?, layout = ? WHERE id = ?",
             (
@@ -721,6 +746,23 @@ def client_settings(client_id):
         if channel["connected"]:
             try:
                 channel["accounts"] = platforms.accounts(mod)
+            except SourceError as exc:
+                channel["error"] = str(exc)
+        channels.append(channel)
+
+    for kind in meta_organic.KEYS:
+        channel = {
+            "key": kind,
+            "name": meta_organic.NAMES[kind],
+            "connected": meta_organic.connected(),
+            "source": sources.get(kind),
+            "accounts": None,
+            "error": None,
+            "layout": layout_choices(client, kind),
+        }
+        if channel["connected"]:
+            try:
+                channel["accounts"] = meta_organic.accounts(kind)
             except SourceError as exc:
                 channel["error"] = str(exc)
         channels.append(channel)

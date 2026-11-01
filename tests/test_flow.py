@@ -120,7 +120,7 @@ with flask_app.app_context():
 resp = team.post("/auth/meta/start", data={"_csrf": token})
 fb = parse_qs(urlparse(resp.location).query)
 assert resp.location.startswith(f"https://www.facebook.com/{meta_ads.API_VERSION}/dialog/oauth?")
-assert fb["client_id"] == ["meta-app"] and fb["scope"] == ["ads_read"]
+assert fb["client_id"] == ["meta-app"] and fb["scope"][0].split(",")[:2] == ["ads_read", "pages_show_list"]
 assert fb["redirect_uri"] == ["http://localhost/auth/meta/callback"]
 resp = team.get("/auth/meta/callback?state=pogresan&code=fb-code", follow_redirects=True)
 assert "Povezivanje je isteklo" in resp.text
@@ -467,6 +467,73 @@ assert "Put do kupovine nije prikazan: Analytics ne beleži e-commerce događaje
 fake.ga4_no_ecommerce = False
 with flask_app.app_context():
     platforms.clear("ga4", "555000111")
+
+# 12g. Podaci iz dokumenta "Potrebe za informacijama po klijentima".
+# GA4: transakcije, Google Ads kampanje iz Analytics-a, izvori, uredjaji.
+team.post("/tim/klijent/1", data={
+    **SETTINGS, "lay_ga4": "1", "m_ga4": ["sessions"],
+    "s_ga4": ["transactions", "ads_campaigns", "sources", "devices"],
+})
+plain = text(visitor.get(f"{path}?kanal=ga4").text)
+for expected in (
+    "Transakcije", "2 transakcije, ukupno 33.480 RSD.", "36137", "29.10.2026.", "15.480 RSD", "35810",
+    "Google Ads kampanje (iz Analytics-a)", "Performance Max - Zlatni nakit", "17.974 RSD", "11.983 RSD", "2.067",
+    "4.400 RSD", "0,24x", "Ukupno 2,5 28.744 RSD 11.498 RSD 3.402",
+    "Posete po izvoru", "google / cpc", "8.147", "3.019", "0 min 21 s", "google / organic",
+    "Posetioci po uređaju", "Mobilni telefon", "5.895", "93,0 %", "Računar", "Tablet",
+):
+    assert expected in plain, expected
+assert "(not set)" not in plain and "(organic)" not in plain
+fake.ga4_old_ads_dimension = True
+with flask_app.app_context():
+    platforms.clear("ga4", "555000111")
+assert "Stara kampanja" in text(visitor.get(f"{path}?kanal=ga4").text), "starija GA4 svojstva"
+fake.ga4_old_ads_dimension = False
+
+# Google Ads: interakcije i interaction rate.
+team.post("/tim/klijent/1", data={
+    **SETTINGS, "m_google_ads": ["impressions", "clicks", "interactions", "interaction_rate"], "s_google_ads": ["campaigns"],
+})
+plain = text(visitor.get(f"{path}?kanal=google_ads").text)
+assert "3.300" in plain and "Interaction rate (interakcije / prikazi)" in plain and "2,75 %" in plain, plain[:800]
+assert "Interaction rate" not in text(team.get("/tim/klijent/1").text).split("Šta klijent vidi u izveštaju Meta Ads")[1].split("Ocene oglasa")[0]
+
+# Facebook stranica i Instagram (organski, Meta Business Suite > Insights).
+settings_page = text(team.get("/tim/klijent/1").text)
+assert "Hrast stranica (301)" in settings_page and "@hrast.namestaj (Hrast stranica) (401)" in settings_page, settings_page[:3000]
+resp = team.post("/tim/klijent/1", data={
+    **SETTINGS, "src_fb_page": "301", "vis_fb_page": "1", "src_instagram": "401", "vis_instagram": "1",
+}, follow_redirects=True)
+assert "Izmene su sačuvane." in resp.text
+with flask_app.app_context():
+    assert "page-token" not in json.dumps(db.query("SELECT * FROM portal_cache")), "tokeni stranica se ne pamte u bazi"
+page = visitor.get(path).text
+tabs = re.findall(r'kanal=([a-z0-9_]+)[^"]*"[^>]*>([^<]+)</a>', page.split('class="tabs"')[1].split("</nav>")[0])
+assert ("fb_page", "Facebook stranica") in tabs and ("instagram", "Instagram") in tabs, tabs
+fb_page = visitor.get(f"{path}?kanal=fb_page").text
+assert hero(fb_page) == "U poslednjih 30 dana sadržaj na vašoj Facebook stranici pregledan je 15.000 puta.", hero(fb_page)
+plain = text(fb_page)
+for expected in ("8.200", "Ljudi je videlo sadržaj", "540", "Interakcija sa sadržajem", "1.234", "Pratilaca danas",
+                 "Pregledi po danima"):
+    assert expected in plain, expected
+ig_page = visitor.get(f"{path}?kanal=instagram").text
+assert hero(ig_page) == "U poslednjih 30 dana sadržaj na vašem Instagram profilu pregledan je 9.000 puta.", hero(ig_page)
+plain = text(ig_page)
+for expected in ("3.000", "Naloga je videlo sadržaj (doseg)", "360", "30", "Klikova na link u profilu", "850"):
+    assert expected in plain, expected
+assert "Facebook stranica, Instagram" in text(team.get("/tim").text)
+# Jedna Meta metrika koja ne radi ne obara ceo izvestaj; tim vidi koja.
+fake.fb_engagement_broken = True
+with flask_app.app_context():
+    platforms.clear("fb_page", "301")
+preview = text(team.get("/tim/klijent/1/pregled?kanal=fb_page").text)
+assert "15.000 puta" in preview and "„Interakcije sa sadržajem“ nije učitano" in preview, preview[:800]
+assert "nije učitano" not in text(visitor.get(f"{path}?kanal=fb_page").text)
+fake.fb_engagement_broken = False
+# Duzi period na Instagramu: delovi od najvise 30 dana.
+fake.organic_calls.clear()
+visitor.get(f"{path}?kanal=instagram&od={YESTERDAY - timedelta(days=59)}&do={YESTERDAY}")
+team.post("/tim/klijent/1", data={**SETTINGS, "src_fb_page": "", "src_instagram": ""})
 
 # Povratak na podrazumevano za dalje provere.
 DEFAULT_ADS = {"m": ["spend", "impressions", "clicks", "cpc", "conversions", "cpa"], "s": ["chart", "campaigns"]}

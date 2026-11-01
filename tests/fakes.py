@@ -59,6 +59,10 @@ class FakeNet:
         self.ranges = []           # (kanal, od, do) za svaki zahtev za dnevne brojke
         self.reach_calls = []
         self.ranking_calls = 0
+        self.ga4_single = []       # dimenzije pojedinacnih GA4 izvestaja
+        self.ga4_old_ads_dimension = False
+        self.organic_calls = []
+        self.fb_engagement_broken = False
         self.meta_max_days = 0     # Meta odbija zahteve duze od ovoliko dana (0 = ne odbija)
         self.meta_refused = 0
         self.slow = {}             # kanal -> sekunde kasnjenja odgovora
@@ -172,7 +176,7 @@ class FakeNet:
                         "segments": {"date": day},
                         "metrics": {
                             "costMicros": "20000000", "impressions": "1000", "clicks": "40",
-                            "conversions": 1.5, "conversionsValue": 120.0,
+                            "conversions": 1.5, "conversionsValue": 120.0, "interactions": "40",
                         },
                     }
                 )
@@ -181,7 +185,7 @@ class FakeNet:
                         "campaign": {"id": "2", "name": "Performance Max"},
                         "segments": {"date": day},
                         # Google izostavlja polja koja su nula
-                        "metrics": {"costMicros": "10000000", "impressions": "3000", "clicks": "10"},
+                        "metrics": {"costMicros": "10000000", "impressions": "3000", "clicks": "10", "interactions": "70"},
                     }
                 )
             return FakeResponse(200, {"results": rows})
@@ -212,6 +216,8 @@ class FakeNet:
                     ]
                 },
             )
+        if url.endswith("/properties/555000111:runReport"):
+            return self._analytics_single(payload)
         assert url.endswith("/properties/555000111:batchRunReports"), url
         reports = payload["requests"]
         if reports[0].get("dimensions") == [{"name": "eventName"}]:
@@ -236,6 +242,36 @@ class FakeNet:
                 ]
             },
         )
+
+    def _analytics_single(self, req):
+        """Pojedinacni GA4 izvestaji: transakcije, Google Ads kampanje, izvori, uredjaji."""
+        dims = [d["name"] for d in req["dimensions"]]
+        mets = [m["name"] for m in req["metrics"]]
+        self.ga4_single.append(dims[0])
+
+        def row(labels, *values):
+            return {"dimensionValues": [{"value": v} for v in labels], "metricValues": [{"value": str(v)} for v in values]}
+
+        meta = {"currencyCode": "RSD"}
+        if dims == ["transactionId", "date"]:
+            assert mets == ["ecommercePurchases", "purchaseRevenue"]
+            rows = [row(["36137", "20261029"], 1, 15480), row(["(not set)", "20261028"], 1, 5), row(["35810", "20261001"], 1, 18000)]
+        elif dims == ["googleAdsCampaignName"]:
+            if self.ga4_old_ads_dimension:
+                return FakeResponse(400, {"error": {"message": "Field googleAdsCampaignName is not a valid dimension."}})
+            assert mets[:2] == ["keyEvents", "advertiserAdCost"]
+            rows = [row(["Performance Max - Zlatni nakit"], 1.5, 17974, 2067, 9, 4400, 0.24),
+                    row(["Performance Max - Srebrni nakit"], 1, 10770, 1335, 8, 2600, 0.24),
+                    row(["(organic)"], 3, 0, 0, 0, 900, 0)]
+        elif dims == ["sessionGoogleAdsCampaignName"]:
+            rows = [row(["Stara kampanja"], 2, 1000, 100, 10, 0, 0)]
+        elif dims == ["sessionSourceMedium"]:
+            rows = [row(["google / cpc"], 8147, 3019, 171087, 545), row(["google / organic"], 404, 295, 33128, 18)]
+        elif dims == ["deviceCategory"]:
+            rows = [row(["mobile"], 5895, 5419, 0.3753, 581), row(["desktop"], 390, 350, 0.5913, 6), row(["tablet"], 54, 53, 0.3333, 0)]
+        else:
+            raise AssertionError(dims)
+        return FakeResponse(200, {"rows": rows, "metadata": meta})
 
     def _analytics_behavior(self, reports):
         """Ponasanje posetilaca: put do kupovine, proizvodi, dogadjaji, ulazne strane."""
@@ -286,6 +322,8 @@ class FakeNet:
             return FakeResponse(200, {"data": {"is_valid": True, "expires_at": expires}})
         token = headers["Authorization"].split()[1]
         self.meta_used.append((token, path))
+        if token.startswith("page-token-"):
+            return self._meta_page(token, path, params)
         if token == "meta-token-2" and "meta" not in self.down:
             return self._meta_colleague(path, params)
         if token != "meta-token" or "meta" in self.down:
@@ -298,6 +336,13 @@ class FakeNet:
                 200,
                 {"data": [{"id": "act_9001", "account_id": "9001", "name": "Hrast Meta", "currency": "EUR", "account_status": 1}]},
             )
+        if path.endswith("/me/accounts"):
+            assert "access_token" in params["fields"] and "instagram_business_account" in params["fields"]
+            return FakeResponse(200, {"data": [
+                {"id": "301", "name": "Hrast stranica", "access_token": "page-token-301", "followers_count": 1200,
+                 "instagram_business_account": {"id": "401", "username": "hrast.namestaj", "followers_count": 850}},
+                {"id": "302", "name": "Druga stranica", "access_token": "page-token-302"},
+            ]})
         if "/act_9002" in path:  # kolegin nalog: ovaj token ga ne vidi
             return FakeResponse(400, {"error": {"message": "Unsupported get request.", "code": 100}})
         if path.endswith("/act_9001"):
@@ -363,6 +408,34 @@ class FakeNet:
             for day in days
         ]
         return FakeResponse(200, {"data": rows, "paging": paging})
+
+    def _meta_page(self, token, path, params):
+        """Organski uvidi Facebook stranice 301 i njenog Instagram profila 401."""
+        assert token == "page-token-301", token
+        self.organic_calls.append((path.rsplit("/", 2)[-2] if path.endswith("/insights") else path.rsplit("/", 1)[-1],
+                                   params.get("metric") if params else None))
+        if path.endswith("/301"):
+            return FakeResponse(200, {"followers_count": 1234, "name": "Hrast stranica"})
+        if path.endswith("/401"):
+            return FakeResponse(200, {"followers_count": 850, "username": "hrast.namestaj"})
+        since, until = int(params["since"]), int(params["until"])
+        days = round((until - since) / 86400)
+        if path.endswith("/301/insights"):
+            metric = params["metric"]
+            if metric == "page_post_engagements" and self.fb_engagement_broken:
+                return FakeResponse(400, {"error": {"message": "(#100) The value must be a valid insights metric", "code": 100}})
+            if params["period"] == "total_over_range":
+                assert metric == "page_total_media_view_unique"
+                return FakeResponse(200, {"data": [{"name": metric, "values": [{"value": 8200}]}]})
+            assert params["period"] == "day" and metric in ("page_media_view", "page_post_engagements")
+            per_day = 500 if metric == "page_media_view" else 18
+            start = date.fromtimestamp(since)
+            values = [{"value": per_day, "end_time": f"{start + timedelta(days=i)}T07:00:00+0000"} for i in range(days)]
+            return FakeResponse(200, {"data": [{"name": metric, "period": "day", "values": values}]})
+        assert path.endswith("/401/insights"), path
+        assert params["metric_type"] == "total_value" and days <= 30, (params, days)
+        per_day = {"views": 300, "reach": 100, "total_interactions": 12, "profile_links_taps": 1}[params["metric"]]
+        return FakeResponse(200, {"data": [{"name": params["metric"], "total_value": {"value": per_day * days}}]})
 
     def _meta_colleague(self, path, params):
         """Drugi clan tima: vidi samo svoj oglasni nalog 9002."""

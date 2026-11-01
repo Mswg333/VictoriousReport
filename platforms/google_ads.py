@@ -147,7 +147,8 @@ def fetch_daily(token, account_id, start, end):
         token,
         account_id,
         "SELECT campaign.id, campaign.name, segments.date, metrics.cost_micros, "
-        "metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value "
+        "metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value, "
+        "metrics.interactions "
         "FROM campaign "
         f"WHERE segments.date BETWEEN '{start.isoformat()}' AND '{end.isoformat()}'",
     )
@@ -167,6 +168,8 @@ def fetch_daily(token, account_id, start, end):
                 int(metrics.get("clicks", 0)),
                 float(metrics.get("conversions", 0)),
                 float(metrics.get("conversionsValue", 0)),
+                # interakcije: klikovi, a kod Performance Max-a i Display-a i angazovanja
+                {"interactions": int(metrics.get("interactions", 0))},
             ]
         )
     return {"start": start.isoformat(), "end": end.isoformat(), "rows": out}

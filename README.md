@@ -50,11 +50,37 @@ izveštaju …“. Isto važi za zbirni izveštaj i za izveštaj o sajtu.
     forme, preuzimanja, video, e-commerce i sopstveni događaji), prevedeni.
   - **Ulazne strane:** posete i procenat „otišli odmah“ (GA4 bounce rate).
 
+  - **Lista transakcija:** broj transakcije, datum, kupovine i iznos.
+  - **Google Ads kampanje (iz Analytics-a):** ključni događaji, trošak, cena po
+    ključnom događaju, klikovi, cena klika, prihod i ROAS, kao GA4 Advertising
+    > Key event performance. Traži da je GA4 povezan sa Google Ads-om.
+  - **Posete po izvoru / mediju** (npr. google / cpc) i **posetioci po uređaju**.
+
   GA4 ne beleži gde je na strani kliknuto; za mape klikova potreban je
   poseban alat (npr. Microsoft Clarity).
 
 Izbor se čuva po klijentu (kolona `layout`). Klijenti koji još nisu podešavani
 vide isto što i ranije.
+
+## Facebook stranica i Instagram (organski rezultati)
+
+Kao Meta Business Suite > Insights. U podešavanjima klijenta biraju se njegova
+Facebook stranica i Instagram profil (sa liste stranica koje vide povezani
+Meta nalozi), a svaki dobija svoj izveštaj:
+
+- **Facebook stranica:** pregledi (`page_media_view`), gledaoci
+  (`page_total_media_view_unique`), interakcije (`page_post_engagements`),
+  broj pratilaca i grafikon po danima. Klikove na link Meta posle ukidanja
+  starih metrika više ne daje preko API-ja.
+- **Instagram:** pregledi, doseg, interakcije, klikovi na link u profilu i broj
+  pratilaca. Za periode duže od 30 dana doseg je zbir po 30 dana.
+
+Meta veza za ovo mora imati i dozvole `pages_show_list`,
+`pages_read_engagement`, `read_insights`, `instagram_basic` i
+`instagram_manage_insights` (u Facebook Login for Business konfiguraciji), pa
+se posle dodavanja dozvola nalog povezuje ponovo. Tokeni stranica se drže samo
+u memoriji, ne u bazi. Ako jedna metrika ne radi, ostale se prikazuju, a tim u
+pregledu vidi koja nije učitana.
 
 ## Logo klijenta
 
@@ -91,6 +117,7 @@ Sve se radi na strani **Izvor podataka**. Šta je potrebno po kanalu:
 | Kanal | Šta treba pripremiti | Kako se povezuje |
 |---|---|---|
 | Google Ads i Analytics | OAuth klijent u Google Cloud projektu "Victorious Portal" | dugme "Poveži Google nalog" |
+| Facebook stranica, Instagram | iste Meta veze, uz dozvole za stranice i Instagram | biraju se u podešavanjima klijenta |
 | Meta Ads | Meta aplikacija sa Marketing API-jem i Facebook Login-om (`META_APP_ID`, `META_APP_SECRET`) | svako iz tima dugmetom "Poveži svoj Facebook nalog"; može i ručno lepljenje tokena |
 | Microsoft Ads (Bing) | developer token iz Microsoft Ads-a; aplikacija u Microsoft Entra (Azure) | dugme "Poveži Microsoft Ads" |
 | TikTok Ads | aplikacija na TikTok API for Business portalu, sa dozvolom za izveštaje | dugme "Poveži TikTok Ads" |

@@ -52,7 +52,7 @@ def default_range():
 
 def _keys(platform, account_id, start, end):
     # "v2": od kad redovi imaju i vrednost konverzija; stariji zapamceni odgovori se ne koriste.
-    suffix = f"{platform}:{account_id}:v3:{start.isoformat()}:{end.isoformat()}"
+    suffix = f"{platform}:{account_id}:v4:{start.isoformat()}:{end.isoformat()}"
     return f"daily:{suffix}", f"daily_error:{suffix}"
 
 
@@ -273,3 +273,5 @@ def clear(platform, account_id):
         base.cache_delete_prefix(f"{prefix}:{platform}:{account_id}:")
     if platform == ga4.KEY:
         base.cache_delete_prefix(f"ga4:{account_id}:")
+    if platform in ("fb_page", "instagram"):
+        base.cache_delete_prefix(f"organic:{platform}:{account_id}:")

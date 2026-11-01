@@ -6,12 +6,12 @@ posetama sajtu iz Analytics-a.
 
 Ovde se samo racuna i priprema tekst; izgled je u templates/report.html.
 """
-from datetime import timedelta
+from datetime import date, timedelta
 
 import fmt
 import layout
 import platforms
-from platforms import base, ga4, meta_ads
+from platforms import base, ga4, meta_ads, meta_organic
 from platforms.base import SourceError
 
 COMBINED = layout.COMBINED
@@ -24,6 +24,11 @@ def tabs_for(client, sources):
     if client["show_combined"] and len(ads) >= 2:
         tabs.append((COMBINED, "Ukupno"))
     tabs += [(mod.KEY, mod.NAME) for mod, _ in ads]
+    tabs += [
+        (key, meta_organic.NAMES[key])
+        for key in meta_organic.KEYS
+        if key in sources and sources[key]["visible"]
+    ]
     site = sources.get(ga4.KEY)
     if site and site["visible"]:
         tabs.append((ga4.KEY, ga4.NAME))
@@ -45,6 +50,8 @@ def build(client, sources, tab, start, end, data_range):
         return _combined(client, sources, start, end, data_range)
     if tab == ga4.KEY:
         return _site(client, sources[ga4.KEY], start, end)
+    if tab in meta_organic.KEYS:
+        return _social(client, tab, sources[tab], start, end)
     return _single(client, platforms.get(tab), sources[tab], start, end, data_range)
 
 
@@ -135,7 +142,11 @@ def _ads_values(kind, spend_by_currency, impressions, clicks, conversions, value
         elif info.get("lifetime"):
             budget = f"{fmt.money(info['lifetime'], currency)} ukupno"
     clicks_all, landing = extra.get("clicks_all", 0), extra.get("landing_views", 0)
+    interactions = extra.get("interactions", 0)
     return {
+        "interactions": fmt.num(interactions) if "interactions" in extra else None,
+        "interaction_rate": fmt.percent(interactions / impressions, 2)
+        if "interactions" in extra and impressions else None,
         "results": f"{fmt.conv(results)} {fmt.plural(results, meta_ads.RESULT_FORMS[result])}" if result else None,
         "cost_per_result": per(results) if result else None,
         "budget": budget,
@@ -183,6 +194,8 @@ def _ads_labels(kind, key=None):
         "cpc_all": ("Cena po kliku (svi klikovi)", "CPC (svi)"),
         "landing_views": ("Pregleda odredišne strane", "Pregledi strane"),
         "cost_per_landing": ("Cena po pregledu odredišne strane", "Cena pregleda"),
+        "interactions": ("Interakcija sa oglasom", "Interakcije"),
+        "interaction_rate": ("Interaction rate (interakcije / prikazi)", "Interaction rate"),
     }
     if key == meta_ads.KEY:  # kod Mete su "klikovi" klikovi na link
         labels["clicks"] = ("Klikova na link", "Klikovi na link")
@@ -531,7 +544,105 @@ def _site(client, source, start, end):
             _behavior(view, lay["s"], ga4.behavior(source["account_id"], start, end), data["users"], notes)
         except SourceError as exc:
             notes.append(f"Ponašanje posetilaca nije učitano: {exc}")
+    if lay["s"] & layout.EXTRA_SITE_SECTIONS:
+        _site_extras(view, lay["s"], source["account_id"], start, end, notes)
     return view, notes
+
+
+def _site_extras(view, sections, property_id, start, end, notes):
+    """Transakcije, Google Ads kampanje iz Analytics-a, izvori poseta i uredjaji."""
+
+    def money(value, currency):
+        return fmt.money(value, currency or "EUR", 2 if 0 < abs(value) < 100 else 0)
+
+    def load(name, label, fn):
+        try:
+            return fn(property_id, start, end)
+        except SourceError as exc:
+            notes.append(f"{label} nije učitano: {exc}")
+            return None
+
+    if "transactions" in sections:
+        data = load("transactions", "Lista transakcija", ga4.transactions)
+        if data is not None:
+            rows = data["rows"]
+            total = sum(r["revenue"] for r in rows)
+            view["transactions"] = {
+                "rows": [
+                    {
+                        "id": r["id"],
+                        "date": fmt.date_numeric(date(int(r["date"][:4]), int(r["date"][4:6]), int(r["date"][6:8])))
+                        if len(r["date"]) == 8 else r["date"],
+                        "purchases": fmt.num(r["purchases"]),
+                        "revenue": money(r["revenue"], data["currency"]),
+                    }
+                    for r in rows
+                ],
+                "summary": (
+                    f"{fmt.num(len(rows))} {fmt.plural(len(rows), ('transakcija', 'transakcije', 'transakcija'))}, "
+                    f"ukupno {money(total, data['currency'])}."
+                    if rows else "U ovom periodu Analytics nije zabeležio nijednu kupovinu."
+                ),
+            }
+
+    if "ads_campaigns" in sections:
+        data = load("ads_campaigns", "Google Ads kampanje iz Analytics-a", ga4.ads_campaigns)
+        if data is not None:
+            if not data["rows"]:
+                notes.append(
+                    "Google Ads kampanje iz Analytics-a: nema podataka. Proverite da je GA4 povezan sa Google Ads nalogom."
+                )
+            else:
+                cur = data["currency"]
+                totals = {k: sum(r[k] for r in data["rows"]) for k in ("key_events", "cost", "clicks", "revenue")}
+
+                def cells(r):
+                    return [
+                        fmt.conv(r["key_events"]),
+                        money(r["cost"], cur),
+                        money(r["cost"] / r["key_events"], cur) if r["key_events"] else "–",
+                        fmt.num(r["clicks"]),
+                        money(r["cost"] / r["clicks"], cur) if r["clicks"] else "–",
+                        money(r["revenue"], cur),
+                        f"{fmt.num(r['revenue'] / r['cost'], 2)}x" if r["cost"] else "–",
+                    ]
+
+                view["ads_campaigns"] = {
+                    "columns": ["Kampanja", "Ključni događaji", "Trošak oglasa", "Cena po ključnom događaju",
+                                "Klikovi", "Cena klika", "Prihod", "ROAS"],
+                    "rows": [[r["name"]] + cells(r) for r in data["rows"]],
+                    "total": ["Ukupno"] + cells(totals),
+                }
+
+    if "sources" in sections:
+        data = load("sources", "Posete po izvoru", ga4.sources)
+        if data and data["rows"]:
+            view["sources"] = [
+                {
+                    "name": r["name"],
+                    "sessions": fmt.num(r["sessions"]),
+                    "engaged": fmt.num(r["engaged"]),
+                    "time": fmt.duration(r["engagement_seconds"] / r["sessions"]) if r["sessions"] else "–",
+                    "key_events": fmt.conv(r["key_events"]),
+                }
+                for r in data["rows"]
+            ]
+
+    if "devices" in sections:
+        data = load("devices", "Posetioci po uređaju", ga4.devices)
+        if data and data["rows"]:
+            total_users = sum(r["users"] for r in data["rows"]) or 1
+            view["devices"] = [
+                {
+                    "name": ga4.DEVICES.get(r["name"], r["name"]),
+                    "users": fmt.num(r["users"]),
+                    "share": fmt.percent(r["users"] / total_users),
+                    "new_users": fmt.num(r["new_users"]),
+                    "engagement": fmt.percent(r["engagement"]),
+                    "key_events": fmt.conv(r["key_events"]),
+                }
+                for r in data["rows"]
+            ]
 
 
 def _behavior(view, sections, data, site_users, notes):
@@ -615,3 +726,74 @@ def _behavior(view, sections, data, site_users, notes):
             if worst and worst["bounce"] > 0
             else "",
         }
+
+
+# ---------------------------------------------------------------- Facebook stranica i Instagram (organski)
+
+SOCIAL_LABELS = {
+    "views": "Pregleda sadržaja",
+    "viewers": "Ljudi je videlo sadržaj",
+    "reach": "Naloga je videlo sadržaj (doseg)",
+    "interactions": "Interakcija sa sadržajem",
+    "link_taps": "Klikova na link u profilu",
+    "followers": "Pratilaca danas",
+}
+
+
+def _social(client, key, source, start, end):
+    """Organski rezultati stranice ili profila, kao u Meta Business Suite > Insights."""
+    lay = layout.get(client, key)
+    metrics, _, _ = layout.options(key)
+    shown = [m for m, _ in metrics if m in lay["m"]]
+    name = meta_organic.NAMES[key]
+    try:
+        if key == meta_organic.FB_KEY:
+            data = meta_organic.facebook(source["account_id"], start, end)
+        else:
+            data = meta_organic.instagram(source["account_id"], start, end)
+    except SourceError as exc:
+        return None, [f"{name} nije vratio podatke: {exc}"]
+
+    labels = dict(metrics)
+    notes = [f"{name}: „{labels[m]}“ nije učitano: {err}" for m, err in data["errors"].items() if m in shown]
+    totals = data["totals"]
+    when = _phrase(start, end)
+    where = "na vašoj Facebook stranici" if key == meta_organic.FB_KEY else "na vašem Instagram profilu"
+    told = set()
+    if "views" in shown and "views" in totals:
+        views = totals["views"]
+        hero = f"{when} sadržaj {where} pregledan je {fmt.num(views)} {fmt.plural(views, fmt.TIMES_FORMS)}."
+        told.add("views")
+    elif "interactions" in shown and "interactions" in totals:
+        hero = f"{when} sadržaj {where} imao je {fmt.num(totals['interactions'])} interakcija."
+        told.add("interactions")
+    else:
+        hero = f"{when}: rezultati objava {where}."
+
+    figures = []
+    for metric in shown:
+        if metric in told or metric not in totals:
+            continue
+        if metric == "reach" and data.get("reach_partial"):
+            notes.append("Instagram doseg za periode duže od 30 dana je zbir po 30 dana, pa može biti nešto veći od stvarnog.")
+        figures.append({"value": fmt.num(totals[metric]), "label": SOCIAL_LABELS[metric]})
+
+    chart = None
+    if key == meta_organic.FB_KEY and "chart" in lay["s"] and data.get("by_day"):
+        metric = lay["chart"]
+        days = (end - start).days + 1
+        series = []
+        for i in range(days):
+            day = start + timedelta(days=i)
+            series.append({"date": day, "value": data["by_day"].get(day.isoformat(), {}).get(metric, 0)})
+        title, none = ("Pregledi", "pregleda") if metric == "views" else ("Interakcije", "interakcija")
+        chart = _chart(series, lambda v: fmt.num(v), title, none)
+
+    return {
+        "kind": "social",
+        "hero": hero,
+        "figures": figures,
+        "chart": chart,
+        "range_text": _range_text(start, end),
+        "last_label": fmt.day_label(end),
+    }, notes

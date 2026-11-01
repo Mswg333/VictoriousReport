@@ -252,6 +252,85 @@
   </section>
   {% endif %}
 
+  {% if view.ads_campaigns %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Google Ads kampanje (iz Analytics-a)</h2>
+      <p class="muted">Rezultati kampanja kako ih meri Analytics na vašem sajtu: ključni događaji i prihod koje su doneli posetioci sa svake kampanje.</p>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr>{% for c in view.ads_campaigns.columns %}<th {% if not loop.first %}class="num"{% endif %}>{{ c }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in view.ads_campaigns.rows %}
+          <tr>{% for cell in row %}<td {% if not loop.first %}class="num"{% endif %}>{% if loop.first %}<strong style="font-weight: 600">{{ cell }}</strong>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+          {% endfor %}
+          <tr class="total">{% for cell in view.ads_campaigns.total %}<td {% if not loop.first %}class="num"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if view.transactions %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Transakcije</h2>
+      <p class="muted">{{ view.transactions.summary }}</p>
+    </div>
+    {% if view.transactions.rows %}
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Broj transakcije</th><th>Datum</th><th class="num">Kupovina</th><th class="num">Iznos</th></tr></thead>
+        <tbody>
+          {% for t in view.transactions.rows %}
+          <tr><td><strong style="font-weight: 600">{{ t.id }}</strong></td><td>{{ t.date }}</td><td class="num">{{ t.purchases }}</td><td class="num">{{ t.revenue }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if view.sources %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Posete po izvoru</h2>
+      <p class="muted">Odakle tačno dolaze posete. „google / cpc“ su plaćeni Google oglasi, „google / organic“ obična Google pretraga.</p>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Izvor / medij</th><th class="num">Posete</th><th class="num">Angažovane posete</th><th class="num">Prosečno trajanje</th><th class="num">Ključni događaji</th></tr></thead>
+        <tbody>
+          {% for r in view.sources %}
+          <tr><td><strong style="font-weight: 600">{{ r.name }}</strong></td><td class="num">{{ r.sessions }}</td><td class="num">{{ r.engaged }}</td><td class="num">{{ r.time }}</td><td class="num">{{ r.key_events }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if view.devices %}
+  <section class="stack gap-16">
+    <div class="stack gap-4">
+      <h2>Posetioci po uređaju</h2>
+      <p class="muted">Sa kojih uređaja ljudi otvaraju sajt.</p>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Uređaj</th><th class="num">Posetioci</th><th class="num">Udeo</th><th class="num">Novi posetioci</th><th class="num">Stopa angažovanja</th><th class="num">Ključni događaji</th></tr></thead>
+        <tbody>
+          {% for r in view.devices %}
+          <tr><td><strong style="font-weight: 600">{{ r.name }}</strong></td><td class="num">{{ r.users }}</td><td class="num">{{ r.share }}</td><td class="num">{{ r.new_users }}</td><td class="num">{{ r.engagement }}</td><td class="num">{{ r.key_events }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
   <footer class="footer muted stack gap-4">
     <p>Izveštaj prikazuje stanje zaključno sa {{ view.last_label }} i osvežava se nekoliko puta dnevno.</p>
     <p>Imate pitanje o rezultatima? Javite se svom kontaktu u agenciji Victorious.</p>

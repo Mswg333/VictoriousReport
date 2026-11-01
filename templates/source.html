@@ -123,7 +123,7 @@
           <ol class="steps muted">
             <li>Na developers.facebook.com otvorite aplikaciju portala. U <strong>App settings → Basic</strong> su App ID i App secret: upišite ih kao <code>META_APP_ID</code> i <code>META_APP_SECRET</code>.</li>
             <li>Dodajte proizvod <strong>Facebook Login</strong> (ili <strong>Facebook Login for Business</strong>) i kao Valid OAuth Redirect URI upišite: <code>{{ callbacks.meta }}</code></li>
-            <li>Ako je aplikacija tipa Business, u Facebook Login for Business napravite konfiguraciju sa dozvolom <code>ads_read</code> i njen ID upišite kao <code>META_LOGIN_CONFIG_ID</code>.</li>
+            <li>Ako je aplikacija tipa Business, u Facebook Login for Business napravite konfiguraciju sa dozvolama <code>ads_read</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>read_insights</code>, <code>instagram_basic</code> i <code>instagram_manage_insights</code> i njen ID upišite kao <code>META_LOGIN_CONFIG_ID</code>. Dozvole za stranice i Instagram trebaju za izveštaje Facebook stranice i Instagram profila.</li>
             <li>Dok je aplikacija u razvojnom režimu, svako ko se povezuje mora imati ulogu na njoj: <strong>App roles → Roles</strong>, dodajte kolege kao Developer ili Tester.</li>
           </ol>
           <form class="stack gap-8" method="post" action="{{ url_for('meta_connect') }}">

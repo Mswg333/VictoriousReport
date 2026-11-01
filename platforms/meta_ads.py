@@ -29,6 +29,15 @@ APP_SECRET = os.environ.get("META_APP_SECRET", "").strip()
 # umesto spiska dozvola.
 LOGIN_CONFIG_ID = os.environ.get("META_LOGIN_CONFIG_ID", "").strip()
 WARN_DAYS = 7  # koliko dana pre isteka tokena tim dobija upozorenje
+# Oglasi (ads_read) i organski rezultati stranica i Instagram profila.
+LOGIN_SCOPES = [
+    "ads_read",
+    "pages_show_list",
+    "pages_read_engagement",
+    "read_insights",
+    "instagram_basic",
+    "instagram_manage_insights",
+]
 HOST = "https://graph.facebook.com/"
 BASE = HOST + API_VERSION
 MAX_PAGES = 200
@@ -144,7 +153,7 @@ def auth_url(redirect_uri, state):
     if LOGIN_CONFIG_ID:
         params["config_id"] = LOGIN_CONFIG_ID
     else:
-        params["scope"] = "ads_read"
+        params["scope"] = ",".join(LOGIN_SCOPES)
     return f"https://www.facebook.com/{API_VERSION}/dialog/oauth?" + urlencode(params)
 
 

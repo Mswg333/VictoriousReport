@@ -46,6 +46,12 @@ META_EXTRA = [
     ("cost_per_landing", "Cena po pregledu odredišne strane", "landing_views"),
 ]
 META_LABELS = {"clicks": "Klikovi na link", "cpc": "Cena po kliku na link"}
+
+# Google Ads: interakcije kao u koloni "Interactions" (klikovi + angazovanja).
+GOOGLE_EXTRA = [
+    ("interactions", "Interakcije", "ctr"),
+    ("interaction_rate", "Interaction rate (interakcije / prikazi)", "interactions"),
+]
 ADS_SECTIONS = [
     ("chart", "Grafikon po danima"),
     ("campaigns", "Tabela kampanja"),
@@ -79,18 +85,52 @@ SITE_SECTIONS = [
     ("products", "Proizvodi: pregledi, korpa, kupovine"),
     ("events", "Na šta posetioci klikću (događaji)"),
     ("landing", "Ulazne strane: koliko ljudi odmah ode"),
+    ("transactions", "Lista transakcija"),
+    ("ads_campaigns", "Google Ads kampanje (iz Analytics-a)"),
+    ("sources", "Posete po izvoru / mediju (npr. google / cpc)"),
+    ("devices", "Posetioci po uređaju"),
 ]
 BEHAVIOR_SECTIONS = {"funnel", "products", "events", "landing"}
+EXTRA_SITE_SECTIONS = {"transactions", "ads_campaigns", "sources", "devices"}
 SITE_CHART = [("sessions", "Posete"), ("users", "Posetioci"), ("key_events", "Konverzije")]
+
+
+# Organski rezultati (Meta Business Suite > Insights)
+FB = "fb_page"
+IG = "instagram"
+FB_METRICS = [
+    ("views", "Pregledi"),
+    ("viewers", "Gledaoci (jedinstveni)"),
+    ("interactions", "Interakcije sa sadržajem"),
+    ("followers", "Pratioci stranice"),
+]
+FB_SECTIONS = [("chart", "Grafikon po danima")]
+FB_CHART = [("views", "Pregledi"), ("interactions", "Interakcije")]
+IG_METRICS = [
+    ("views", "Pregledi"),
+    ("reach", "Doseg (broj naloga)"),
+    ("interactions", "Interakcije"),
+    ("link_taps", "Klikovi na link u profilu"),
+    ("followers", "Pratioci"),
+]
 
 
 def options(key):
     """(brojke, delovi, izbor grafikona) koji postoje za ovaj izvestaj."""
     if key == SITE:
         return SITE_METRICS, SITE_SECTIONS, SITE_CHART
+    if key == FB:
+        return FB_METRICS, FB_SECTIONS, FB_CHART
+    if key == IG:
+        return IG_METRICS, [], [("views", "Pregledi")]
     metrics = ADS_METRICS if key in REACH_KEYS else [m for m in ADS_METRICS if m[0] not in ("reach", "frequency")]
     if key == COMBINED:
         return metrics, COMBINED_SECTIONS, ADS_CHART
+    if key == "google_ads":
+        metrics = list(metrics)
+        for extra, label, after in GOOGLE_EXTRA:
+            position = [m for m, _ in metrics].index(after) + 1
+            metrics.insert(position, (extra, label))
     if key == "meta":
         metrics = [(m, META_LABELS.get(m, label)) for m, label in metrics]
         for extra, label, after in META_EXTRA:
@@ -115,6 +155,9 @@ def default(client, key):
     """Izbor za klijenta koji jos nije podesavan, prema starim prekidacima."""
     if key == SITE:
         return {"m": ["sessions", "users", "avg_time"], "s": ["chart", "channels", "pages"], "chart": "sessions"}
+    if key in (FB, IG):
+        metrics, sections, charts = options(key)
+        return {"m": [m for m, _ in metrics], "s": [s for s, _ in sections], "chart": charts[0][0]}
     spend, clicks, conv = client.get("show_spend", 1), client.get("show_clicks", 1), client.get("show_conv", 1)
     metrics = []
     if spend:
