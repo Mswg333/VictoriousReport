@@ -149,6 +149,7 @@ def inject_helpers():
         # Upozorenja o vezama koje isticu vidi samo tim.
         "team_warnings": meta_ads.warnings() if user else [],
         "logo_url": logo_url,
+        "icon_url": icon_url,
     }
 
 
@@ -864,6 +865,7 @@ def client_remove(client_id):
     client = get_client_or_404(client_id)
     db.execute("DELETE FROM portal_sources WHERE client_id = ?", (client_id,))
     db.execute("DELETE FROM portal_logos WHERE client_id = ?", (client_id,))
+    db.execute("DELETE FROM portal_icons WHERE client_id = ?", (client_id,))
     db.execute("DELETE FROM portal_clients WHERE id = ?", (client_id,))
     flash(f"{client['name']} je uklonjen sa portala. Njegov link više ne radi.", "ok")
     return redirect(url_for("clients"))
@@ -1108,6 +1110,21 @@ def image_type(data):
     return None
 
 
+def png_size(data):
+    """(sirina, visina) PNG slike, ili None za druge formate."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24:
+        return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    return None
+
+
+# Dve slike klijenta: logo (u zaglavlju) i ikonica (favicon, u tabu browsera).
+# (tabela, kolona sa verzijom, ruta za prikaz, naziv u porukama)
+IMAGES = {
+    "logo": ("portal_logos", "logo_version", "client_logo", "Logo"),
+    "ikona": ("portal_icons", "icon_version", "client_icon", "Ikonica"),
+}
+
+
 def logo_url(client):
     """Adresa logoa klijenta, ili None. Verzija u adresi menja se sa svakim novim logoom."""
     if not client or not client.get("logo_version"):
@@ -1115,46 +1132,58 @@ def logo_url(client):
     return url_for("client_logo", token=client["token"], v=client["logo_version"])
 
 
-@app.post("/tim/klijent/<int:client_id>/logo")
-@team_required
-def client_logo_upload(client_id):
+def icon_url(client):
+    """Ikonica u tabu browsera: posebno dodata ikonica, a ako je nema, logo."""
+    if client and client.get("icon_version"):
+        return url_for("client_icon", token=client["token"], v=client["icon_version"])
+    return logo_url(client)
+
+
+def _save_image(client_id, kind):
     client = get_client_or_404(client_id)
-    upload = request.files.get("logo")
+    table, column, _, label = IMAGES[kind]
+    fem = "a" if kind == "ikona" else ""  # "Ikonica je sačuvana", "Logo je sačuvan"
+    upload = request.files.get(kind)
     data = upload.read(LOGO_MAX_BYTES + 1) if upload else b""
     mime = image_type(data)
     if not data:
-        flash("Izaberite fajl sa logoom.", "error")
+        flash(f"Izaberite fajl ({label.lower()}).", "error")
     elif len(data) > LOGO_MAX_BYTES:
-        flash("Logo je prevelik. Najviše 1 MB.", "error")
+        flash(f"{label} je prevelik{fem}. Najviše 1 MB.", "error")
     elif not mime:
-        flash("Logo mora biti PNG, JPG ili WebP slika.", "error")
+        flash(f"{label} mora biti PNG, JPG ili WebP slika.", "error")
     else:
-        db.execute("DELETE FROM portal_logos WHERE client_id = ?", (client_id,))
+        db.execute(f"DELETE FROM {table} WHERE client_id = ?", (client_id,))
         db.execute(
-            "INSERT INTO portal_logos (client_id, mime, data, updated_at) VALUES (?, ?, ?, ?)",
+            f"INSERT INTO {table} (client_id, mime, data, updated_at) VALUES (?, ?, ?, ?)",
             (client_id, mime, base64.b64encode(data).decode(), datetime.now(timezone.utc).isoformat(timespec="seconds")),
         )
         version = hashlib.sha256(data).hexdigest()[:12]
-        db.execute("UPDATE portal_clients SET logo_version = ? WHERE id = ?", (version, client_id))
-        flash(f"Logo za {client['name']} je sačuvan.", "ok")
+        db.execute(f"UPDATE portal_clients SET {column} = ? WHERE id = ?", (version, client_id))
+        flash(f"{label} za {client['name']} je sačuvan{fem}.", "ok")
+        size = png_size(data)
+        if kind == "ikona" and size and size[0] != size[1]:
+            flash(
+                f"Ikonica nije kvadratna ({size[0]} × {size[1]} px), pa će je browser suziti. "
+                "Najbolje je kvadratna slika, na primer 512 × 512 px.",
+                "error",
+            )
     return redirect(url_for("client_settings", client_id=client_id))
 
 
-@app.post("/tim/klijent/<int:client_id>/logo/ukloni")
-@team_required
-def client_logo_remove(client_id):
+def _remove_image(client_id, kind):
     get_client_or_404(client_id)
-    db.execute("DELETE FROM portal_logos WHERE client_id = ?", (client_id,))
-    db.execute("UPDATE portal_clients SET logo_version = '' WHERE id = ?", (client_id,))
-    flash("Logo je uklonjen.", "ok")
+    table, column, _, label = IMAGES[kind]
+    db.execute(f"DELETE FROM {table} WHERE client_id = ?", (client_id,))
+    db.execute(f"UPDATE portal_clients SET {column} = '' WHERE id = ?", (client_id,))
+    flash(f"{label} je uklonjen{'a' if kind == 'ikona' else ''}.", "ok")
     return redirect(url_for("client_settings", client_id=client_id))
 
 
-@app.get("/k/<token>/logo")
-def client_logo(token):
-    """Logo se vidi i pre unosa lozinke, da klijent odmah prepozna svoj izvestaj."""
+def _serve_image(token, kind):
+    table = IMAGES[kind][0]
     client = db.query("SELECT id FROM portal_clients WHERE token = ?", (token,), one=True)
-    row = client and db.query("SELECT mime, data FROM portal_logos WHERE client_id = ?", (client["id"],), one=True)
+    row = client and db.query(f"SELECT mime, data FROM {table} WHERE client_id = ?", (client["id"],), one=True)
     if not row or row["mime"] not in LOGO_TYPES:
         abort(404)
     resp = Response(base64.b64decode(row["data"]), mimetype=row["mime"])
@@ -1162,6 +1191,41 @@ def client_logo(token):
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Content-Security-Policy"] = "default-src 'none'"
     return resp
+
+
+@app.post("/tim/klijent/<int:client_id>/logo")
+@team_required
+def client_logo_upload(client_id):
+    return _save_image(client_id, "logo")
+
+
+@app.post("/tim/klijent/<int:client_id>/logo/ukloni")
+@team_required
+def client_logo_remove(client_id):
+    return _remove_image(client_id, "logo")
+
+
+@app.post("/tim/klijent/<int:client_id>/ikona")
+@team_required
+def client_icon_upload(client_id):
+    return _save_image(client_id, "ikona")
+
+
+@app.post("/tim/klijent/<int:client_id>/ikona/ukloni")
+@team_required
+def client_icon_remove(client_id):
+    return _remove_image(client_id, "ikona")
+
+
+@app.get("/k/<token>/logo")
+def client_logo(token):
+    """Logo se vidi i pre unosa lozinke, da klijent odmah prepozna svoj izvestaj."""
+    return _serve_image(token, "logo")
+
+
+@app.get("/k/<token>/ikona")
+def client_icon(token):
+    return _serve_image(token, "ikona")
 
 
 # ---------------------------------------------------------------- greske

@@ -185,7 +185,7 @@
     <section class="card stack gap-12">
       <div class="stack gap-4">
         <h2>Logo klijenta</h2>
-        <p class="muted">Prikazuje se u zaglavlju izveštaja pored Victorious logoa i kao ikonica u tabu browsera. PNG, JPG ili WebP, najviše 1 MB; najbolje izgleda logo na providnoj ili beloj pozadini.</p>
+        <p class="muted">Prikazuje se u zaglavlju izveštaja pored Victorious logoa. Najbolje: vodoravni PNG na providnoj pozadini, isečen bez praznih ivica, oko 480 × 120 px (odnos do 4 : 1). Najviše 1 MB.</p>
       </div>
       {% if logo_url(client) %}
       <div class="cobrand logo-preview">
@@ -207,6 +207,36 @@
         <form method="post" action="{{ url_for('client_logo_remove', client_id=client.id) }}">
           <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <button class="btn danger" type="submit">Ukloni logo</button>
+        </form>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="card stack gap-12">
+      <div class="stack gap-4">
+        <h2>Ikonica u tabu browsera</h2>
+        <p class="muted">Mala slika u tabu (favicon). Najbolje: kvadratni PNG 512 × 512 px, samo znak ili inicijali klijenta bez sitnog teksta, jer se prikazuje na 16–32 px. {% if not client.icon_version %}Dok je ne dodate, koristi se logo.{% endif %}</p>
+      </div>
+      {% if icon_url(client) %}
+      <div class="row gap-16 logo-preview" style="align-items: center">
+        <img src="{{ icon_url(client) }}" alt="Ikonica: {{ client.name }}" width="32" height="32" style="object-fit: contain">
+        <img src="{{ icon_url(client) }}" alt="" width="16" height="16" style="object-fit: contain">
+        <span class="muted">Ovako izgleda u tabu{% if not client.icon_version %} (sada je to logo){% endif %}.</span>
+      </div>
+      {% endif %}
+      <div class="row gap-12" style="align-items: flex-end">
+        <form class="row gap-12" method="post" action="{{ url_for('client_icon_upload', client_id=client.id) }}" enctype="multipart/form-data" style="align-items: flex-end">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <div class="stack gap-8">
+            <label class="field" for="ikona">{% if client.icon_version %}Zameni ikonicu{% else %}Dodaj ikonicu{% endif %}</label>
+            <input id="ikona" name="ikona" type="file" accept="image/png,image/jpeg,image/webp" required>
+          </div>
+          <button class="btn primary" type="submit">Sačuvaj ikonicu</button>
+        </form>
+        {% if client.icon_version %}
+        <form method="post" action="{{ url_for('client_icon_remove', client_id=client.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button class="btn danger" type="submit">Ukloni ikonicu</button>
         </form>
         {% endif %}
       </div>

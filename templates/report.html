@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ client.name }}: rezultati kampanja{% endblock %}
-{% block head %}{% if logo_url(client) %}<link rel="icon" href="{{ logo_url(client) }}">{% endif %}{% endblock %}
+{% block head %}{% if icon_url(client) %}<link rel="icon" href="{{ icon_url(client) }}">{% endif %}{% endblock %}
 {% block body %}
 {% if preview %}
 <div class="preview-bar small">Ovo je pregled za tim. Klijent vidi isto, bez ove trake. <a href="{{ url_for('client_settings', client_id=client.id) }}">Nazad na podešavanja</a></div>

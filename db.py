@@ -79,6 +79,13 @@ SCHEMA = [
         data TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""",
+    # Ikonica u tabu browsera (favicon), odvojeno od logoa jer je kvadratna.
+    """CREATE TABLE IF NOT EXISTS portal_icons (
+        client_id INTEGER PRIMARY KEY,
+        mime TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""",
     # Kes odgovora sa platformi, da se strane otvaraju brzo i da se ne trosi kvota.
     """CREATE TABLE IF NOT EXISTS portal_cache (
         cache_key TEXT PRIMARY KEY,
@@ -193,7 +200,7 @@ def init_schema():
     conn.commit()
     # Kolone dodate posle prvih verzija.
     existing = columns("portal_clients")
-    for column in ("range_start", "range_end", "layout", "logo_version"):
+    for column in ("range_start", "range_end", "layout", "logo_version", "icon_version"):
         if column not in existing:
             cur.execute(f"ALTER TABLE portal_clients ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
     if "single_page" not in existing:

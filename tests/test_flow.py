@@ -299,6 +299,25 @@ assert "Logo je uklonjen." in resp.text and 'class="client-logo"' not in resp.te
 assert 'rel="icon"' not in visitor.get(path).text
 upload(first)
 
+# Ikonica u tabu (favicon) je odvojena od logoa; bez nje se koristi logo.
+logo_src = re.search(r'class="client-logo" src="([^"]+)"', team.get("/tim/klijent/1").text).group(1)
+assert f'<link rel="icon" href="{logo_src}">' in visitor.get(path).text
+icon = tiny_png((10, 20, 30))
+resp = team.post("/tim/klijent/1/ikona", data={"_csrf": token, "ikona": (io.BytesIO(icon), "ikona.png")},
+                 content_type="multipart/form-data", follow_redirects=True)
+assert "Ikonica za Nameštaj Hrast d.o.o. je sačuvana." in resp.text and "Zameni ikonicu" in resp.text, text(resp.text)[:500]
+assert "Ikonica nije kvadratna (2 × 1 px)" in resp.text
+page = visitor.get(path).text
+icon_src = re.search(r'<link rel="icon" href="([^"]+)">', page).group(1)
+assert "/ikona?v=" in icon_src and logo_src in page and icon_src != logo_src
+assert flask_app.test_client().get(icon_src).data == icon
+assert icon_src in flask_app.test_client().get(path).text, "i na strani za lozinku"
+resp = team.post("/tim/klijent/1/ikona/ukloni", data={"_csrf": token}, follow_redirects=True)
+assert "Ikonica je uklonjena." in resp.text
+assert f'<link rel="icon" href="{logo_src}">' in visitor.get(path).text
+team.post("/tim/klijent/1/ikona", data={"_csrf": token, "ikona": (io.BytesIO(icon), "ikona.png")},
+          content_type="multipart/form-data")
+
 # 10. Zbirni izvestaj je prvi; kanali u razlicitim valutama nemaju zbirnu cenu.
 page = visitor.get(path).text
 tabs = re.findall(r'<a href="[^"]*kanal=([a-z0-9_]+)[^"]*"[^>]*>([^<]+)</a>', page.split('class="tabs"')[1].split("</nav>")[0])
@@ -808,6 +827,7 @@ assert visitor.get(path).status_code == 404
 with flask_app.app_context():
     assert db.query("SELECT * FROM portal_sources") == []
     assert db.query("SELECT client_id FROM portal_logos") == [], "logo se brise sa klijentom"
+    assert db.query("SELECT client_id FROM portal_icons") == [], "ikonica se brise sa klijentom"
 
 # 18. Odjava.
 team.post("/tim/odjava", data={"_csrf": token})
